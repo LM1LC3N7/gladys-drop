@@ -57,8 +57,9 @@ leaves at once and cancels those of the same hub still waiting for their turn (n
 clicked before a shutoff leaves after it). It leaves even when the valve seems closed
 already.
 
-It is **kept** (in memory and in `/data`) until the device shows the water off after the
-send (a live message, or the retained one received at a reconnection), or a turn-on of
+It is **kept** (in memory and in `/data`) until the device shows the water off after it
+left (a live message, or the retained one received at a later reconnection; before it
+leaves, nothing lets it go), or a turn-on of
 this hub leaves from Gladys after it (its write taken by the broker):
 
 - clicked without a broker connection: answered "shutoff kept", sent right after the next
@@ -70,7 +71,9 @@ this hub leaves from Gladys after it (its write taken by the broker):
 - a write of `/data` that fails never delays it;
 - when the valve was known closed as it left, a turn-on seen later (made in the DROP app,
   say) lets it go: it is never sent again against that turn-on;
-- never confirmed: it is given up 24 h after the click, or as soon as you delete the
+- never confirmed: it is given up 24 h after it first left in this run of the
+  integration (it always leaves at least once; the status names it), or as soon as you
+  delete the
   device in Gladys (the status says so).
 
 It is not sent only when the identity is wrong: a value other than the button press, or a

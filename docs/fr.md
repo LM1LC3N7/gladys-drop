@@ -57,7 +57,8 @@ elle part tout de suite et annule celles du même hub qui attendent encore leur 
 cliqué avant une coupure ne part après elle). Elle part même si la vanne semble déjà fermée.
 
 Elle est **gardée** (en mémoire et dans `/data`) jusqu'à ce que l'appareil montre l'eau
-coupée après l'envoi (message en direct, ou message retenu reçu à la reconnexion), ou
+coupée après son départ (message en direct, ou message retenu reçu à une reconnexion
+suivante ; avant son départ, rien ne la lève), ou
 qu'une ouverture de ce hub parte de Gladys après elle (écriture acceptée par le broker) :
 
 - cliquée sans connexion au broker : réponse « coupure gardée », envoi juste après la
@@ -70,7 +71,9 @@ qu'une ouverture de ce hub parte de Gladys après elle (écriture acceptée par 
 - si la vanne était connue fermée quand la coupure est partie, une ouverture vue ensuite
   (faite dans l'application DROP, par exemple) la lève : elle n'est jamais renvoyée contre
   cette ouverture ;
-- jamais confirmée : elle est abandonnée 24 h après le clic, ou dès que vous supprimez
+- jamais confirmée : elle est abandonnée 24 h après son premier envoi depuis le démarrage
+  de l'intégration (elle part toujours au moins une fois ; le statut la nomme), ou dès que
+  vous supprimez
   l'appareil dans Gladys (le statut le dit).
 
 Elle n'est pas envoyée seulement si l'identité ne va pas : une valeur autre que l'appui du

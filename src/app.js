@@ -704,9 +704,9 @@ export class DropApp {
     const stop = this.stops.get(entry.pid);
     if (stop && values.has('water')) {
       const water = values.get('water');
-      if (water === 0) {
-        // Seen closed (a retained message, which the broker sends only after the
-        // SUBACK, so after the shutoff left, is the hub's last word).
+      if (water === 0 && stop.sends > 0) {
+        // Seen closed after the shutoff left (a retained message too: the hub's
+        // last word). Before it left, nothing lets it go: it leaves first.
         this.liftStop(stop, 'confirmed');
       } else if (water === 1 && !retained && stop.closedSeen) {
         // Known closed when it left: this is a turn-on made elsewhere (the DROP app), never fought.
@@ -902,12 +902,14 @@ export class DropApp {
       stop = { pid: job.pid, hub: job.hub, device: job.device, sends: 0, lastSent: -Infinity };
       this.stops.set(job.pid, stop);
     }
+    if (this.givenUp) this.givenUp = this.givenUp.filter((n) => n !== job.name);
     Object.assign(stop, {
       name: job.name,
       at: this.now(),
       budget: TIMINGS.stopResends,
       held: false,
       closedSeen: false,
+      firstSent: undefined,
       seq,
     });
     // Never awaited: a slow or failing /data never holds the shutoff back.
@@ -983,15 +985,14 @@ export class DropApp {
     if (!this.mqttConnected || !client) {
       return Promise.resolve('offline');
     }
-    if (this.now() - stop.at > TIMINGS.stopExpiry) {
-      this.liftStop(stop, 'given up: not seen applied in 24 h');
-      return Promise.resolve('expired');
-    }
-    // Known closed when it leaves: a later live "water on" is a turn-on made elsewhere.
-    const entry = this.registry.get(stop.pid);
-    if (entry?.heard && entry.values.get('water')?.value === 0) stop.closedSeen = true;
+    // Known closed (by a live message, never a retained one) when it leaves:
+    // a later live "water on" is a turn-on made elsewhere.
+    const known = this.registry.get(stop.pid)?.values.get('water');
+    if (known?.value === 0 && known.live) stop.closedSeen = true;
     stop.sends += 1;
     stop.lastSent = this.monotonic();
+    // The 24 h of the give-up count from the first send in this process (monotonic).
+    if (stop.firstSent === undefined) stop.firstSent = stop.lastSent;
     this.armStopCheck(stop);
     return new Promise((resolve) => {
       const timer = this.timers.setTimeout(() => resolve('timeout'), TIMINGS.publishWait);
@@ -1026,6 +1027,16 @@ export class DropApp {
   /** Not seen applied (or contradicted): sent again within its budget, then held. */
   retryStop(stop) {
     if (this.stops.get(stop.pid) !== stop || !this.mqttConnected || this.closed) {
+      return;
+    }
+    if (stop.firstSent !== undefined && this.monotonic() - stop.firstSent > TIMINGS.stopExpiry) {
+      // Sent at least once, never seen applied in 24 h: given up, said in the status.
+      this.givenUp = [stop.name, ...(this.givenUp ?? []).filter((n) => n !== stop.name)].slice(
+        0,
+        3,
+      );
+      this.liftStop(stop, 'given up: not seen applied in 24 h');
+      this.statusNow().catch(() => {});
       return;
     }
     if (stop.held) {
@@ -1292,6 +1303,9 @@ export class DropApp {
     }
     if (this.certSeen && !this.certStopped && !this.mqttConnected && this.config.tls) {
       message = join(message, T.certSeen(this.certSeen));
+    }
+    if (this.givenUp?.length > 0) {
+      message = join(message, T.stopsGivenUp(this.givenUp.join(', ')));
     }
     if (this.stops.size > 0) {
       const held = [...this.stops.values()].filter((stop) => stop.held).length;

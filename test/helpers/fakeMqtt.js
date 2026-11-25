@@ -23,6 +23,10 @@ export class FakeMqttClient extends EventEmitter {
 
   subscribe(topics, options, callback) {
     this.subscriptions.push(...[].concat(topics));
+    // Retained messages arriving in the same block as the SUBACK: handled before its callback.
+    for (const [topic, payload] of this.retainedOnSubscribe ?? []) {
+      this.deliver(topic, payload, { retain: true });
+    }
     const granted = this.granted ?? [].concat(topics).map((topic) => ({ topic, qos: 0 }));
     callback?.(null, granted);
   }

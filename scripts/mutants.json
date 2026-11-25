@@ -284,8 +284,8 @@
   {
     "name": "stop: no check after a send",
     "file": "src/app.js",
-    "from": "    stop.lastSent = this.monotonic();\n    this.armStopCheck(stop);",
-    "to": "    stop.lastSent = this.monotonic();"
+    "from": "    if (stop.firstSent === undefined) stop.firstSent = stop.lastSent;\n    this.armStopCheck(stop);",
+    "to": "    if (stop.firstSent === undefined) stop.firstSent = stop.lastSent;"
   },
   {
     "name": "stop: unlimited quick resends",
@@ -342,22 +342,10 @@
     "to": "      } else if (false) {"
   },
   {
-    "name": "stop: never known closed at the send",
-    "file": "src/app.js",
-    "from": "    if (entry?.heard && entry.values.get('water')?.value === 0) stop.closedSeen = true;",
-    "to": "    void entry;"
-  },
-  {
     "name": "stop: deleting the device keeps it",
     "file": "src/app.js",
     "from": "    if (stop) this.liftStop(stop, 'given up: the device was deleted in Gladys');",
     "to": "    void stop;"
-  },
-  {
-    "name": "stop: never expires",
-    "file": "src/app.js",
-    "from": "    if (this.now() - stop.at > TIMINGS.stopExpiry) {",
-    "to": "    if (false) {"
   },
   {
     "name": "open: a turn-on left hanging lets the shutoff go",
@@ -408,9 +396,45 @@
     "to": "      if (true) {"
   },
   {
+    "name": "stop: never expires",
+    "file": "src/app.js",
+    "from": "    if (stop.firstSent !== undefined && this.monotonic() - stop.firstSent > TIMINGS.stopExpiry) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "stop: expires without having left",
+    "file": "src/app.js",
+    "from": "    if (stop.firstSent !== undefined && this.monotonic() - stop.firstSent > TIMINGS.stopExpiry) {",
+    "to": "    if (this.monotonic() - (stop.firstSent ?? -Infinity) > TIMINGS.stopExpiry) {"
+  },
+  {
     "name": "stop: lifted by any water value",
     "file": "src/app.js",
-    "from": "      if (water === 0) {\n        // Seen closed",
-    "to": "      if (water !== undefined) {\n        // Seen closed"
+    "from": "      if (water === 0 && stop.sends > 0) {",
+    "to": "      if (water !== undefined && stop.sends > 0) {"
+  },
+  {
+    "name": "stop: lifted before it left",
+    "file": "src/app.js",
+    "from": "      if (water === 0 && stop.sends > 0) {",
+    "to": "      if (water === 0) {"
+  },
+  {
+    "name": "stop: never known closed at the send",
+    "file": "src/app.js",
+    "from": "    if (known?.value === 0 && known.live) stop.closedSeen = true;",
+    "to": "    void known;"
+  },
+  {
+    "name": "stop: known closed from a retained message",
+    "file": "src/app.js",
+    "from": "    if (known?.value === 0 && known.live) stop.closedSeen = true;",
+    "to": "    if (known?.value === 0) stop.closedSeen = true;"
+  },
+  {
+    "name": "stop: give-up not said in the status",
+    "file": "src/app.js",
+    "from": "      message = join(message, T.stopsGivenUp(this.givenUp.join(', ')));",
+    "to": "      void 0;"
   }
 ]

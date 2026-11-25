@@ -708,3 +708,60 @@ test('a command is never confirmed by a message of another device', async () => 
   assert.match(said(t), /sent, without confirmation/);
   await t.app.shutdown();
 });
+
+test('B3: clicked offline, the wall clock jumps 25 h before the connection: sent all the same', async () => {
+  const t = await ready({ follow: false });
+  t.client.close();
+  await t.clock.advance(0);
+  await t.press(hub(), FEATURES.WATER_CLOSE);
+  const wall = t.app.now;
+  t.app.now = () => wall() + 25 * 3600 * 1000;
+  t.client.open();
+  await t.clock.advance(0);
+  assert.deepEqual(sent(t), [{ topic: cmdTopic(N.hub), body: { water: 0 } }]);
+  assert.equal(t.app.stops.size, 1, 'kept: never given up by the wall clock');
+  await t.app.shutdown();
+});
+
+test('B3: a shutoff read from a 2-day-old /data leaves at the connection', async () => {
+  const store = memoryStore({
+    stops: [{ hub: HUB, device: N.hub, name: 'Hub', at: Date.UTC(2025, 11, 30) }],
+  });
+  const t = await setup({ config: BASE, devices: [hub()], store, follow: false });
+  await t.open();
+  assert.deepEqual(t.client.commands(), [{ topic: cmdTopic(N.hub), body: { water: 0 } }]);
+  assert.equal(t.app.stops.size, 1);
+  await t.app.shutdown();
+});
+
+test('B3: given up 24 h (monotonic) after the first send, named in the status', async () => {
+  const t = await ready({ follow: false });
+  await t.press(hub(), FEATURES.WATER_CLOSE);
+  await t.clock.advance(TIMINGS.stopExpiry - TIMINGS.stopHeldEvery);
+  assert.equal(t.app.stops.size, 1);
+  await t.clock.advance(2 * TIMINGS.stopHeldEvery);
+  assert.equal(t.app.stops.size, 0);
+  assert.match(said(t), /Shutoff given up after 24 h without the valve showing the water off: Hub/);
+  await t.app.shutdown();
+});
+
+test('I4: a stale retained "water off" in the same block as the SUBACK never lets a shutoff go before it left', async () => {
+  const t = await ready({ follow: false });
+  t.client.close();
+  await t.clock.advance(0);
+  await t.press(hub(), FEATURES.WATER_CLOSE);
+  t.client.retainedOnSubscribe = [[dataTopic(N.hub), { water: 0, leak: 0 }]];
+  t.client.open();
+  await t.clock.advance(0);
+  assert.deepEqual(sent(t), [{ topic: cmdTopic(N.hub), body: { water: 0 } }]);
+  assert.equal(t.app.stops.size, 1, 'the retained message came before the send');
+  // That retained "off" is not "known closed": a live "on" is a contradiction, sent again.
+  await t.clock.advance(TIMINGS.stopApplyDelay);
+  await t.publish(dataTopic(N.hub), { water: 1 });
+  assert.equal(sent(t).length, 2);
+  assert.equal(t.app.stops.size, 1);
+  // A "water off" received after the send lets it go.
+  await t.publish(dataTopic(N.hub), { water: 0 });
+  assert.equal(t.app.stops.size, 0);
+  await t.app.shutdown();
+});

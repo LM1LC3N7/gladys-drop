@@ -23,7 +23,7 @@ the notes of the version's GitHub Release.
   until the device shows the water off: sent at the next connection when
   clicked offline, again after a restart, when contradicted and without a
   confirmation; never against a turn-on made elsewhere once seen closed;
-  given up when the device is deleted or 24 h after the click.
+  given up when the device is deleted or 24 h after it first left.
 - Turning the water on, the bypass and the protect mode, each behind its own
   option, off by default; never a switch. Turning the water on is refused on
   any leak or unknown leak state of the hub, dropped messages, or a recent

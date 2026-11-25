@@ -126,6 +126,21 @@ life-remaining` (core 4.86+).
   the stop and confirmation ones run again after the last change; suite
   passed 20 times in `node:22-alpine` (a flaky brute-force count fixed with
   a constant salt).
+- **Review r3 (2026-11-25)**: B3: a shutoff always leaves at least once; the
+  24 h give-up counts on the monotonic clock from its first send in this
+  process (never the wall clock, never from /data); a give-up is named in the
+  status. I4: a shutoff not yet sent is let go by nothing: it leaves first;
+  only a `water:0` received after its send (retained included) lets it go;
+  "known closed" (a later live turn-on made elsewhere) rests on a live
+  message only, never a retained one. Checks: 73 mutants, all killed but
+  #33 (equivalent, as before) and #67 (expiry without a send: equivalent, the
+  check only runs from a timer armed by a send; kept as defence); #37 survived
+  once in the full run and was killed in 2 reruns alone (not explained). Suite
+  20/20 in `node:22-alpine`. Real Mosquitto 2 in Docker, 14 checks green: the
+  shutoff without option, a turn-on made in the DROP app never fought, clicked
+  with the broker down then sent at its return, a stale retained "off" only
+  after the send, the retained "off" at a reconnection, a leak of an
+  unknown-type device, the shutoff resent from /data after a restart.
 - **Real broker**: a scenario against Mosquitto 2 in Docker (password file, a
   simulated hub publishing retained discovery and data, following the
   commands): connected, states, Discovery, shutoff and turn-on confirmed in
