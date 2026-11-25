@@ -11,8 +11,8 @@ export const DEFAULT_CONFIG = {
   username: '',
   password: '',
   broker_fingerprint: '',
-  // Louis's rule: the water is never shut off nor let in until the user allows it.
-  allow_water_close: false,
+  // Shutting the water off is protective: never behind an option. Turning it
+  // on, the bypass and the protect mode stay off until the user allows them.
   allow_water_open: false,
   allow_bypass: false,
   allow_mode_change: false,
@@ -125,7 +125,6 @@ export function normalizeConfig(raw = {}) {
     username: problem ? '' : username,
     password: problem ? '' : password,
     fingerprint: pin.fingerprint,
-    allowWaterClose: strictTrue(c.allow_water_close),
     allowWaterOpen: strictTrue(c.allow_water_open),
     allowBypass: strictTrue(c.allow_bypass),
     allowModeChange: strictTrue(c.allow_mode_change),

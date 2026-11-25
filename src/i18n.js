@@ -140,6 +140,16 @@ export const T = {
     ' Messages dropped: the broker sends too many.',
     ' Messages ignorés : le broker en envoie trop.',
   ),
+  certSeen: (fingerprint) =>
+    both(
+      ` Certificate seen: ${fingerprint}; enter it in "Certificate fingerprint" if you trust it.`,
+      ` Certificat vu : ${fingerprint} ; saisissez-le dans « Empreinte du certificat » si vous lui faites confiance.`,
+    ),
+  stopsKept: (n, held) =>
+    both(
+      ` ${n} shutoff(s) kept until the valve shows the water off${held ? `, ${held} held (sent again every 10 min)` : ''}.`,
+      ` ${n} coupure(s) gardée(s) jusqu’à ce que la vanne montre l’eau coupée${held ? `, ${held} retenue(s) (renvoyée(s) toutes les 10 min)` : ''}.`,
+    ),
   lastCommand: (text) => both(` Last command: ${text.en}`, ` Dernière commande : ${text.fr}`),
 };
 
@@ -202,8 +212,28 @@ export const C = {
     ),
   closing: (name) =>
     both(
-      `${name}: a shutoff is still under way. Nothing sent.`,
-      `${name} : une coupure est encore en cours. Rien envoyé.`,
+      `${name}: a shutoff of this hub left less than 20 s ago. Nothing sent.`,
+      `${name} : une coupure de ce hub est partie il y a moins de 20 s. Rien envoyé.`,
+    ),
+  closeKept: (name) =>
+    both(
+      `${name}: shutoff kept, sent as soon as the broker connection is back.`,
+      `${name} : coupure gardée, envoyée dès le retour de la connexion au broker.`,
+    ),
+  closeSentKept: (name) =>
+    both(
+      `${name}: shutoff sent, not confirmed yet: sent again until the device shows the water off.`,
+      `${name} : coupure envoyée, pas encore confirmée : renvoyée jusqu’à ce que l’appareil montre l’eau coupée.`,
+    ),
+  leakUnknownOthers: (name, others) =>
+    both(
+      `${name}: the leak state of ${others} is unknown in this connection. Nothing sent.`,
+      `${name} : l’état de fuite de ${others} est inconnu dans cette connexion. Rien envoyé.`,
+    ),
+  flooded: (name) =>
+    both(
+      `${name}: messages of the broker were dropped (too many), the state is uncertain. Nothing sent.`,
+      `${name} : des messages du broker ont été ignorés (trop nombreux), l’état est incertain. Rien envoyé.`,
     ),
   already: (name) =>
     both(

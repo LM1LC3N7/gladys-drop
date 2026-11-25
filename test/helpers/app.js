@@ -16,7 +16,6 @@ import { fakeConnector } from './fakeMqtt.js';
 export const BASE = { broker_url: '192.168.1.20' };
 export const ALL = {
   ...BASE,
-  allow_water_close: true,
   allow_water_open: true,
   allow_bypass: true,
   allow_mode_change: true,
@@ -94,6 +93,8 @@ export async function setup({
     logger,
     store,
     connect: connector.connect,
+    probe: async () => undefined,
+    now: clock.now,
     monotonic: clock.monotonic,
     timers: clock.timers,
   });

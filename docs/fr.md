@@ -39,32 +39,47 @@ absente, vide ou hors limites reste inconnue : jamais publiée comme 0.
 Broker en TLS au certificat auto-signé : saisissez l'empreinte SHA-256 de son certificat.
 La connexion n'est alors acceptée que pour ce certificat ; un autre certificat arrête tout
 avant l'envoi du mot de passe et le statut affiche l'empreinte vue. Sans empreinte, le
-certificat doit être signé par une autorité connue.
+certificat doit être signé par une autorité connue ; un certificat refusé affiche aussi son
+empreinte dans le statut (lue sur une connexion qui n'envoie rien), à coller dans le champ
+si vous lui faites confiance.
 
-## Commandes : toutes désactivées par défaut
+## Commandes
 
-Chacune a sa case dans la configuration. Ce ne sont jamais des interrupteurs : un « tout
-éteindre » ou un assistant vocal ne peut pas toucher la vanne. Couper et ouvrir l'eau sont
-deux boutons ; le bypass et le mode de protection sont des listes.
+Ce ne sont jamais des interrupteurs : un « tout éteindre » ou un assistant vocal ne peut
+pas toucher la vanne. Couper et ouvrir l'eau sont deux boutons ; le bypass et le mode de
+protection sont des listes.
 
-L'option est relue au clic et encore juste avant l'envoi. Une commande part dans les 2 s
-de son clic, une seule fois (jamais mise en attente ni renvoyée), sinon elle n'est pas
-envoyée. Gladys a sa réponse en 3,5 s au plus : « fait, confirmé par l'appareil » (un
-message de l'appareil reçu après l'envoi montre la valeur demandée), « envoyé, sans
-confirmation » (le statut dit ensuite si l'appareil l'a montré dans les 20 s), ou un refus
-qui finit par « Rien envoyé ». La dernière commande s'affiche dans le statut de la page de
-configuration.
+### Couper l'eau : toujours permis
 
-**Couper l'eau** (hub, vanne de protection) n'est refusé que dans ces cas :
+**Couper l'eau** (hub, vanne de protection) n'a pas d'option : c'est la sécurité de
+l'appareil. Elle ne lit rien avant de partir et ne passe pas derrière les autres commandes :
+elle part tout de suite et annule celles du même hub qui attendent encore leur tour (rien de
+cliqué avant une coupure ne part après elle). Elle part même si la vanne semble déjà fermée.
 
-- « Autoriser la coupure de l'eau » est décochée ;
-- Gladys n'est pas connecté au broker ;
-- le broker ne prend pas la commande ;
-- le hub annonce maintenant un autre type pour cet appareil (relancez une découverte).
+Elle est **gardée** (en mémoire et dans `/data`) jusqu'à ce qu'un message de l'appareil
+reçu en direct montre l'eau coupée, ou qu'une ouverture de ce hub parte après elle :
 
-Elle ne passe pas derrière les autres commandes de l'appareil : elle part tout de suite
-et annule celles qui attendent encore leur tour (rien de cliqué avant une coupure ne part
-après elle). Elle part même si la vanne semble déjà fermée.
+- cliquée sans connexion au broker : réponse « coupure gardée », envoi juste après la
+  connexion suivante, sans attendre de message du hub ;
+- après un redémarrage de l'intégration : renvoyée d'après `/data` dès la connexion ;
+- renvoyée si l'appareil montre encore l'eau ouverte au moins 2 s après l'envoi, et 20 s
+  après chaque envoi sans confirmation : 3 fois, puis toutes les 10 min (« retenue »,
+  dit dans le statut), jusqu'à confirmation ;
+- une écriture de `/data` qui échoue ne la retarde jamais.
+
+Elle n'est pas envoyée seulement si l'identité ne va pas : une valeur autre que l'appui du
+bouton, ou un appareil dont le hub annonce maintenant un autre type (relancez une
+découverte). Sans connexion possible au broker (identifiants refusés, certificat refusé),
+elle reste gardée et part dès que la connexion revient.
+
+### Les autres commandes : désactivées par défaut
+
+Chacune a sa case dans la configuration, relue au clic et encore juste avant l'envoi. Une
+commande part dans les 2 s de son clic, une seule fois, sinon elle n'est pas envoyée.
+Gladys a sa réponse en 3,5 s au plus : « fait, confirmé par l'appareil » (un message de
+l'appareil reçu après l'envoi montre la valeur demandée), « envoyé, sans confirmation » (le
+statut dit ensuite si l'appareil l'a montré dans les 20 s), ou un refus qui finit par
+« Rien envoyé ». La dernière commande s'affiche dans le statut de la page de configuration.
 
 **Ouvrir l'eau** n'est envoyé que si tout cela est vrai, d'après ce que le hub a publié
 depuis la connexion au broker (DROP n'a pas de requête de lecture ; à chaque connexion ou
@@ -73,15 +88,21 @@ déconnexion, tout redevient inconnu jusqu'aux messages suivants) :
 - « Autoriser l'ouverture de l'eau » est cochée, au clic et juste avant l'envoi ;
 - l'état de la vanne de l'appareil est connu ; déjà ouverte : rien n'est envoyé ;
 - son état de fuite est connu et sans fuite ;
-- aucun appareil du même hub ne signale de fuite (détecteurs, vanne, pompe, osmoseur)
-  ni d'alerte de capteur ;
-- aucune coupure de cet appareil n'est en cours (envoyée depuis moins de 20 s sans
-  confirmation) ;
-- aucune coupure n'a été cliquée depuis ce clic.
+- chaque appareil du même hub qui peut signaler une fuite (hub, vanne, détecteurs, pompe,
+  osmoseur, alerte), annoncé par le hub ou créé dans Gladys, a un état connu, sans fuite
+  ni alerte. Un détecteur retiré ou hors service bloque l'ouverture : supprimez-le dans
+  Gladys ;
+- aucun message du broker n'a été ignoré (plus de 200 par seconde) dans les 2 dernières
+  secondes ;
+- aucune coupure de ce hub n'est partie depuis moins de 20 s, et aucune n'a été cliquée
+  depuis ce clic.
+
+Une ouverture qui part abandonne les coupures gardées de ce hub.
 
 **Bypass** (hub, adoucisseur, filtre ; activé : l'eau contourne le traitement) et **mode de
 protection** (hub : Maison, Absent, Programmé ; Absent est le plus strict) : refusés si leur
-option est décochée ; rien n'est envoyé s'ils sont déjà dans l'état demandé.
+option est décochée ; rien n'est envoyé s'ils sont déjà dans l'état demandé. Passer en
+Absent n'est pas une coupure : cela reste derrière l'option du mode de protection.
 
 ## Sécurité
 

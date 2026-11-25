@@ -120,8 +120,16 @@ test('TLS without a fingerprint: a self-signed certificate is refused, nothing s
     username: 'drop',
     password: PASSWORD,
   });
-  await until(() => /unreachable/.test(s.status()?.message?.en ?? ''), 'refused certificate');
+  await until(
+    () => (s.status()?.message?.en ?? '').includes(certs.device.fingerprint256),
+    'the fingerprint seen shown',
+  );
+  assert.match(s.status().message.en, /unreachable/);
   assert.equal(broker.connects.length, 0);
+  assert.ok(
+    broker.received.every((r) => r.count === 0),
+    'nothing written, the probe neither',
+  );
 });
 
 test('end to end: discovery, states, a shutoff published and confirmed', async (t) => {

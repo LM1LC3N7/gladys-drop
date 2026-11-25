@@ -116,6 +116,18 @@ export const TIMINGS = {
   publishWait: 1000,
   /** After the answer to Gladys, the effect is still watched for this long (status). */
   confirmWatch: 20 * SECOND,
+  /** A shutoff kept: checked this long after each send, sent again without a confirmation. */
+  stopCheck: 20 * SECOND,
+  /** A water-on message this long after a shutoff left contradicts it (before: in flight). */
+  stopApplyDelay: 2 * SECOND,
+  /** Sent again at most this many times (a new budget at each click and connection), */
+  stopResends: 3,
+  /** then held: sent again this often, forever, until seen applied or a turn-on leaves. */
+  stopHeldEvery: 10 * MINUTE,
+  /** A turn-on is refused this long after a shutoff of the same hub left. */
+  stopWindow: 20 * SECOND,
+  /** A TLS certificate refused: its fingerprint read (nothing written) within this. */
+  probeTimeout: 5 * SECOND,
   /** `getConfig()` failed: tried again this much later, forever. */
   configRetry: 30 * SECOND,
   /** /data unreadable: read again this much later, forever. */

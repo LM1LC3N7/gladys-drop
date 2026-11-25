@@ -12,27 +12,9 @@
     "to": "    if (false) {"
   },
   {
-    "name": "runClose: a shutoff does not cancel what waits",
-    "file": "src/app.js",
-    "from": "    this.stopSeq.set(job.pid, (this.stopSeq.get(job.pid) ?? 0) + 1);",
-    "to": "    void 0;"
-  },
-  {
-    "name": "send: a cancelled command still leaves",
-    "file": "src/app.js",
-    "from": "    if (job.command !== 'close' && (this.stopSeq.get(job.pid) ?? 0) !== job.seq) {",
-    "to": "    if (false) {"
-  },
-  {
     "name": "runQueued: no 2 s limit",
     "file": "src/app.js",
     "from": "    if (mono - job.clickAt > TIMINGS.commandSendBy) {",
-    "to": "    if (false) {"
-  },
-  {
-    "name": "open: a shutoff under way ignored",
-    "file": "src/app.js",
-    "from": "    if ((this.closing.get(job.pid)?.until ?? -Infinity) > mono) {",
     "to": "    if (false) {"
   },
   {
@@ -50,20 +32,20 @@
   {
     "name": "open: a leak elsewhere on the hub ignored",
     "file": "src/app.js",
-    "from": "        other.values.get('leak')?.value === 1 ||",
-    "to": "        other.values.get('leak')?.value === 2 ||"
+    "from": "      if (value === 1) leaking.push(name);",
+    "to": "      if (value === 2) leaking.push(name);"
   },
   {
     "name": "open: a sensor alert ignored",
     "file": "src/app.js",
-    "from": "        (type === TYPES.ALERT && other.values.get('sens')?.value === 1)",
-    "to": "        (type === TYPES.ALERT && other.values.get('sens')?.value === 2)"
+    "from": "  [TYPES.ALERT]: 'sens',",
+    "to": "  [TYPES.ALERT]: 'nope',"
   },
   {
     "name": "open: other hubs checked instead of this one",
     "file": "src/app.js",
-    "from": "      if (other.hub !== job.hub || !other.heard) continue;",
-    "to": "      if (other.hub === job.hub || !other.heard) continue;"
+    "from": "      if (other.hub !== job.hub) continue;",
+    "to": "      if (other.hub === job.hub) continue;"
   },
   {
     "name": "open: already on still sent",
@@ -86,8 +68,8 @@
   {
     "name": "send: published while not connected",
     "file": "src/app.js",
-    "from": "    if (!this.mqttConnected || !client) {",
-    "to": "    if (!client) {"
+    "from": "    const client = this.client;\n    if (!this.mqttConnected || !client) {\n      return { ok: false, text: C.offline(job.name) };",
+    "to": "    const client = this.client;\n    if (!client) {\n      return { ok: false, text: C.offline(job.name) };"
   },
   {
     "name": "send: a write error taken as sent",
@@ -98,8 +80,8 @@
   {
     "name": "send: a hanging write taken as an error",
     "file": "src/app.js",
-    "from": "resolve('timeout'), TIMINGS.publishWait",
-    "to": "resolve('error'), TIMINGS.publishWait"
+    "from": "    job.sent = true;\n    const written = await new Promise((resolve) => {\n      const timer = this.timers.setTimeout(() => resolve('timeout'), TIMINGS.publishWait);",
+    "to": "    job.sent = true;\n    const written = await new Promise((resolve) => {\n      const timer = this.timers.setTimeout(() => resolve('error'), TIMINGS.publishWait);"
   },
   {
     "name": "session: values kept across a disconnection",
@@ -252,15 +234,141 @@
     "to": "() => resolve({ ok: false, text: C.late(job.name) }),"
   },
   {
-    "name": "closing: an older shutoff ends the watch of a newer one",
-    "file": "src/app.js",
-    "from": "    if (this.closing.get(job.pid)?.job === job) {",
-    "to": "    if (true) {"
-  },
-  {
     "name": "start: a stale start connects after a newer one",
     "file": "src/app.js",
     "from": "      if (generation !== this.generation || this.closed) {\n        // Started again meanwhile",
     "to": "      if (false) {\n        // Started again meanwhile"
+  },
+  {
+    "name": "close: a shutoff does not cancel what waits on its hub",
+    "file": "src/app.js",
+    "from": "    this.stopSeq.set(job.hub, (this.stopSeq.get(job.hub) ?? 0) + 1);",
+    "to": "    void 0;"
+  },
+  {
+    "name": "send: a cancelled command still leaves",
+    "file": "src/app.js",
+    "from": "    if ((this.stopSeq.get(job.hub) ?? 0) !== job.seq) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "close: cancels per device instead of per hub",
+    "file": "src/app.js",
+    "from": "    job.seq = this.stopSeq.get(job.hub) ?? 0;",
+    "to": "    job.seq = this.stopSeq.get(job.pid) ?? 0;"
+  },
+  {
+    "name": "open: a recent shutoff of the hub ignored",
+    "file": "src/app.js",
+    "from": "      if (stop.hub === job.hub && mono - stop.lastSent < TIMINGS.stopWindow) {",
+    "to": "      if (false) {"
+  },
+  {
+    "name": "close: behind the option again",
+    "file": "src/app.js",
+    "from": "      // The stop: no option, nothing read before it leaves.\n      return this.clickClose(job);",
+    "to": "      if (!this.config.allowWaterOpen) return { ok: false, text: C.notAllowed(name, command) };\n      return this.clickClose(job);"
+  },
+  {
+    "name": "stop: lifted by any live water value",
+    "file": "src/app.js",
+    "from": "      if (values.get('water') === 0) {\n        this.liftStop(stop, 'confirmed');",
+    "to": "      if (values.get('water') !== undefined) {\n        this.liftStop(stop, 'confirmed');"
+  },
+  {
+    "name": "stop: lifted by a retained message",
+    "file": "src/app.js",
+    "from": "    if (stop && !retained && values.has('water')) {",
+    "to": "    if (stop && values.has('water')) {"
+  },
+  {
+    "name": "stop: contradiction ignored",
+    "file": "src/app.js",
+    "from": "        // Contradicted: the water is still on after the shutoff left.\n        this.retryStop(stop);",
+    "to": "        void 0;"
+  },
+  {
+    "name": "stop: contradiction taken while in flight",
+    "file": "src/app.js",
+    "from": "        mono - stop.lastSent >= TIMINGS.stopApplyDelay",
+    "to": "        mono - stop.lastSent >= 0"
+  },
+  {
+    "name": "stop: not sent again at the connection",
+    "file": "src/app.js",
+    "from": "    // The shutoffs kept leave first, without waiting for any message of the hub.\n    this.fireAllStops();",
+    "to": "    void 0;"
+  },
+  {
+    "name": "stop: not restored from /data",
+    "file": "src/app.js",
+    "from": "      this.restoreStops();",
+    "to": "      void 0;"
+  },
+  {
+    "name": "stop: no check after a send",
+    "file": "src/app.js",
+    "from": "    stop.lastSent = this.monotonic();\n    this.armStopCheck(stop);",
+    "to": "    stop.lastSent = this.monotonic();"
+  },
+  {
+    "name": "stop: unlimited quick resends",
+    "file": "src/app.js",
+    "from": "    } else if (stop.budget > 0) {",
+    "to": "    } else if (true) {"
+  },
+  {
+    "name": "stop: clicked offline not kept",
+    "file": "src/app.js",
+    "from": "    if (!this.mqttConnected || !this.client) {\n      this.wakeForStop();\n      return { ok: true, text: C.closeKept(job.name), seq };",
+    "to": "    if (!this.mqttConnected || !this.client) {\n      this.stops.delete(job.pid);\n      return { ok: true, text: C.closeKept(job.name), seq };"
+  },
+  {
+    "name": "stop: /data unreadable never connects",
+    "file": "src/app.js",
+    "from": "    if (this.memoryState !== 'ok' && this.stops.size === 0) {",
+    "to": "    if (this.memoryState !== 'ok') {"
+  },
+  {
+    "name": "/data: written over an unreadable file",
+    "file": "src/app.js",
+    "from": "    if (this.memoryState !== 'ok') {\n      // Never written over a file that could not be read.\n      return false;",
+    "to": "    if (false) {\n      // Never written over a file that could not be read.\n      return false;"
+  },
+  {
+    "name": "open: a turn-on that left does not let the shutoff go",
+    "file": "src/app.js",
+    "from": "        if (stop.hub === job.hub) this.liftStop(stop, 'let go by a turn-on sent after it');",
+    "to": "        void stop;"
+  },
+  {
+    "name": "open: created devices never heard ignored",
+    "file": "src/app.js",
+    "from": "      unknown.push(typeof device.name === 'string' ? device.name.slice(0, 60) : pid);",
+    "to": "      void pid;"
+  },
+  {
+    "name": "open: announced devices never heard ignored",
+    "file": "src/app.js",
+    "from": "      else if (value === undefined) unknown.push(name);",
+    "to": "      else if (value === undefined) void name;"
+  },
+  {
+    "name": "open: dropped messages ignored",
+    "file": "src/app.js",
+    "from": "    if (this.flood.lastDrop !== undefined && second - this.flood.lastDrop <= 1) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "tls: the fingerprint of a refused certificate not read",
+    "file": "src/app.js",
+    "from": "        this.probeCertificate(generation).catch(() => {});",
+    "to": "        void generation;"
+  },
+  {
+    "name": "store: a future date kept",
+    "file": "src/store.js",
+    "from": "Math.min(s.at, now)",
+    "to": "s.at"
   }
 ]

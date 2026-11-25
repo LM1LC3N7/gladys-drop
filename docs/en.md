@@ -40,31 +40,47 @@ A broker in TLS with a self-signed certificate: enter the SHA-256 fingerprint of
 certificate. The connection is then accepted for this certificate only; another
 certificate stops everything before the password leaves and the status shows the
 fingerprint seen. Without a fingerprint, the certificate must be signed by a known
-authority.
+authority; a refused certificate also shows its fingerprint in the status (read on a
+connection that sends nothing), to paste in the field if you trust it.
 
-## Commands: all off by default
+## Commands
 
-Each has its own box in the configuration. They are never switches: a "turn everything
-off" or a voice assistant cannot touch the valve. Shutting the water off and turning it on
-are two buttons; the bypass and the protect mode are lists.
+They are never switches: a "turn everything off" or a voice assistant cannot touch the
+valve. Shutting the water off and turning it on are two buttons; the bypass and the protect
+mode are lists.
 
-The option is read at the click and again right before sending. A command leaves within
-2 s of its click, once (never queued nor sent again), or is not sent. Gladys gets its
+### Shutting the water off: always allowed
+
+**Shutting the water off** (hub, protection valve) has no option: it is the safety of the
+device. It reads nothing before leaving and does not wait behind the other commands: it
+leaves at once and cancels those of the same hub still waiting for their turn (nothing
+clicked before a shutoff leaves after it). It leaves even when the valve seems closed
+already.
+
+It is **kept** (in memory and in `/data`) until a live message of the device shows the
+water off, or a turn-on of this hub leaves after it:
+
+- clicked without a broker connection: answered "shutoff kept", sent right after the next
+  connection, without waiting for a message of the hub;
+- after a restart of the integration: sent again from `/data` at the connection;
+- sent again when the device still shows the water on at least 2 s after it left, and
+  20 s after each send without a confirmation: 3 times, then every 10 min ("held", said in
+  the status), until confirmed;
+- a write of `/data` that fails never delays it.
+
+It is not sent only when the identity is wrong: a value other than the button press, or a
+device the hub now announces with another type (scan again). Without a possible broker
+connection (credentials refused, certificate refused), it stays kept and leaves as soon as
+the connection is back.
+
+### The other commands: off by default
+
+Each has its own box in the configuration, read at the click and again right before
+sending. A command leaves within 2 s of its click, once, or is not sent. Gladys gets its
 answer within 3.5 s: "done, confirmed by the device" (a message of the device received
 after sending shows the value asked), "sent, without confirmation" (the status then says
 whether the device showed it within 20 s), or a refusal ending with "Nothing sent". The
 last command is shown in the status of the configuration page.
-
-**Shutting the water off** (hub, protection valve) is refused in these cases only:
-
-- "Allow shutting the water off" is unchecked;
-- Gladys is not connected to the broker;
-- the broker does not take the command;
-- the hub now announces another type for this device (scan again).
-
-It does not wait behind the other commands of the device: it leaves at once and cancels
-those still waiting for their turn (nothing clicked before a shutoff leaves after it). It
-leaves even when the valve seems closed already.
 
 **Turning the water on** is sent only when all of this is true, from what the hub
 published since the connection to the broker (DROP has no read request; at each
@@ -73,14 +89,19 @@ connection or disconnection everything is unknown again until the next messages)
 - "Allow turning the water on" is checked, at the click and right before sending;
 - the valve state of the device is known; already on: nothing is sent;
 - its leak state is known and without a leak;
-- no device of the same hub reports a leak (detectors, valve, pump, reverse osmosis) nor
-  a sensor alert;
-- no shutoff of this device is under way (sent less than 20 s ago without confirmation);
-- no shutoff was clicked since this click.
+- every device of the same hub able to report a leak (hub, valve, detectors, pump,
+  reverse osmosis, alert), announced by the hub or created in Gladys, has a known state,
+  without a leak nor an alert. A detector removed or out of order blocks turning on:
+  delete it in Gladys;
+- no message of the broker was dropped (over 200 a second) in the last 2 seconds;
+- no shutoff of this hub left less than 20 s ago, and none was clicked since this click.
+
+A turn-on that leaves lets go the shutoffs kept on this hub.
 
 **Bypass** (hub, softener, filter; on: the water goes around the treatment) and **protect
 mode** (hub: Home, Away, Schedule; Away is the strictest): refused when their option is
-unchecked; nothing is sent when already in the state asked.
+unchecked; nothing is sent when already in the state asked. Switching to Away is not a
+shutoff: it stays behind the option of the protect mode.
 
 ## Security
 

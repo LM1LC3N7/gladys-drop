@@ -25,25 +25,32 @@
 // connection and disconnection every value goes back to unknown (the
 // retained messages the broker sends at once fill them again).
 //
-// Commands (Louis's rule: never a switch, all off by default):
-//   - shutting the water off (`allow_water_close`) and turning it on
-//     (`allow_water_open`), the bypass (`allow_bypass`) and the protect mode
-//     (`allow_mode_change`) are refused unless the configuration allows
-//     each, checked at the click and again right before the publication;
-//   - one command at a time per device (a lane), except the shutoff: it
-//     never waits in the lane, and every command of the device still waiting
-//     there is cancelled by it (nothing clicked before a shutoff leaves
-//     after it);
+// Commands (never a switch):
+//   - shutting the water off is the stop of this module: behind no option,
+//     never in the lane of its device, cancelling every command of the same
+//     hub still waiting there (nothing clicked before a shutoff leaves after
+//     it). It is kept, in memory and in /data, until a live message of the
+//     device shows its water off or a turn-on of the same hub leaves after
+//     it: clicked offline it leaves right after the next SUBACK; it is sent
+//     again after a restart, at each connection, when a live message shows
+//     the water still on (2 s after it left at least), and 20 s after each
+//     send without a confirmation: 3 times, then every 10 min (held). A
+//     failed save of /data never holds it back;
+//   - turning the water on (`allow_water_open`), the bypass (`allow_bypass`)
+//     and the protect mode (`allow_mode_change`) are refused unless the
+//     configuration allows each, checked at the click and again right
+//     before the publication; one at a time per device (a lane);
 //   - turning the water on is decided on what the hub published in this
-//     connection (DROP has no read request): refused when the valve state or
-//     its leak state is unknown, on a leak reported by the device or by any
-//     device of the same hub, or while a shutoff is under way; nothing sent
-//     when already on;
-//   - a command leaves within 2 s of its click or never; it is sent once
-//     (QoS 0, never queued, never retried) and confirmed only by a later
-//     live message of the device showing the value asked; Gladys is
-//     answered by 3.5 s: done, sent without confirmation, or refused with
-//     "Nothing sent"; the effect is still watched 20 s, in the status.
+//     connection (DROP has no read request): refused when the valve state,
+//     its leak state or the leak state of any leak-capable device of the hub
+//     (announced, or created in Gladys) is unknown, on a leak or a sensor
+//     alert of the hub, while messages are being dropped (flood), and within
+//     20 s of a shutoff of the same hub; nothing sent when already on;
+//   - those commands leave within 2 s of their click or never, once (QoS 0)
+//     and are confirmed only by a later live message of the device showing
+//     the value asked; Gladys is answered by 3.5 s: done, sent without
+//     confirmation, or refused with "Nothing sent"; the effect is still
+//     watched 20 s, in the status.
 // -----------------------------------------------------------------------------
 
 import { createLogger } from '@gladysassistant/integration-sdk';
@@ -70,16 +77,39 @@ import {
 } from './devices.js';
 import { COMMANDS, commandTopic, parseData, parseDiscovery, parseTopic } from './drop.js';
 import { C, T, TEST, word } from './i18n.js';
-import { connectBroker, errorReason, isProtocolRefusal, isRefusal } from './mqtt.js';
+import {
+  connectBroker,
+  errorReason,
+  isCertificateRefusal,
+  isProtocolRefusal,
+  isRefusal,
+  probeFingerprint,
+} from './mqtt.js';
 import { StatePublisher } from './publisher.js';
-import { credentialMark, fileStore, newSalt, normalizeMemory, serializeMemory } from './store.js';
+import {
+  MAX_STOPS,
+  credentialMark,
+  fileStore,
+  newSalt,
+  normalizeMemory,
+  serializeMemory,
+} from './store.js';
 
 /** What each command needs allowed in the configuration. */
 const OPTION_OF = {
-  close: 'allowWaterClose',
   open: 'allowWaterOpen',
   bypass: 'allowBypass',
   mode: 'allowModeChange',
+};
+
+/** The leak state of each leak-capable DROP type (an alert by its sensor). */
+const LEAK_KEY = {
+  [TYPES.HUB]: 'leak',
+  [TYPES.VALVE]: 'leak',
+  [TYPES.LEAK]: 'leak',
+  [TYPES.PUMP]: 'leak',
+  [TYPES.RO]: 'leak',
+  [TYPES.ALERT]: 'sens',
 };
 
 const join = (a, b) => ({ en: `${a.en}${b.en}`, fr: `${a.fr}${b.fr}` });
@@ -90,9 +120,13 @@ export class DropApp {
     logger = createLogger({ name: 'drop' }),
     store = fileStore(),
     connect = connectBroker,
+    probe = probeFingerprint,
+    now = () => Date.now(),
     monotonic = () => performance.now(),
     timers = globalThis,
   }) {
+    this.probe = probe;
+    this.now = now;
     this.gladys = gladys;
     this.logger = logger;
     this.store = store;
@@ -109,7 +143,7 @@ export class DropApp {
     this.connKey = undefined;
     /** /data: 'unread' | 'ok' | 'io' | 'invalid'. */
     this.memoryState = 'unread';
-    this.memory = { refused: undefined };
+    this.memory = { refused: undefined, stops: [] };
     this.reading = undefined;
     this.storeTimer = undefined;
     this.configTimer = undefined;
@@ -126,12 +160,15 @@ export class DropApp {
     /** platformId -> { hub, device, pid, discovered, values: Map key -> { value, at, live }, heard } */
     this.registry = new Map();
     this.ignored = new Set();
-    this.flood = { second: -1, count: 0, dropped: false };
+    this.flood = { second: -1, count: 0, dropped: false, lastDrop: undefined };
+
+    /** The shutoffs kept: platformId -> { pid, hub, device, name, at, budget, sends, lastSent, held, seq }. */
+    this.stops = new Map();
 
     /** Commands: the lane of each device, the shutoffs clicked, those under way. */
     this.lanes = new Map();
+    /** Shutoffs clicked, by hub: a command of the hub waiting its turn is cancelled by a newer one. */
     this.stopSeq = new Map();
-    this.closing = new Map();
     this.waiters = new Set();
     this.lastCommand = undefined;
     this.commandSeq = 0;
@@ -194,10 +231,13 @@ export class DropApp {
       return;
     }
     if (result?.ok) {
-      this.memory = normalizeMemory(result.data);
+      this.memory = normalizeMemory(result.data, this.now());
       this.memoryState = 'ok';
+      this.restoreStops();
       if (this.started && !this.client && !this.config.problem) {
         await this.start(this.rawConfig);
+      } else if (this.stops.size > 0) {
+        this.saveMemory().catch(() => {});
       }
       return;
     }
@@ -217,6 +257,11 @@ export class DropApp {
   }
 
   async saveMemory() {
+    if (this.memoryState !== 'ok') {
+      // Never written over a file that could not be read.
+      return false;
+    }
+    this.memory.stops = [...this.stops.values()].slice(0, MAX_STOPS);
     let timer;
     try {
       await Promise.race([
@@ -303,13 +348,15 @@ export class DropApp {
     this.refusedNow = undefined;
     this.certSeen = undefined;
     this.certStopped = false;
-    this.flood = { second: -1, count: 0, dropped: false };
+    this.flood = { second: -1, count: 0, dropped: false, lastDrop: undefined };
+    this.certProbed = false;
     this.resetSession();
     if (this.config.problem) {
       await this.statusNow();
       return;
     }
-    if (this.memoryState !== 'ok') {
+    if (this.memoryState !== 'ok' && this.stops.size === 0) {
+      // A shutoff clicked meanwhile connects anyway (src/app.js clickClose).
       await this.statusNow();
       return;
     }
@@ -415,6 +462,9 @@ export class DropApp {
         this.onProtocolRefused().catch((e) => this.logger.error(`MQTT 3.1.1: ${e.message}`));
         return;
       }
+      if (this.config.tls && !this.config.fingerprint && isCertificateRefusal(err)) {
+        this.probeCertificate(generation).catch(() => {});
+      }
       if (err?.message === 'connack timeout' && pending) {
         pending = 'no answer from the broker to the connection';
       }
@@ -461,6 +511,8 @@ export class DropApp {
     }
     this.mqttConnected = true;
     this.logger.info(`Connected to ${this.config.brokerUrl}`);
+    // The shutoffs kept leave first, without waiting for any message of the hub.
+    this.fireAllStops();
     if (this.memory.refused) {
       // Accepted: nothing is kept of credentials that work.
       this.memory.refused = undefined;
@@ -503,6 +555,16 @@ export class DropApp {
     }
   }
 
+  /** A certificate refused without a pinned one: its fingerprint read once, to be shown. */
+  async probeCertificate(generation) {
+    if (this.certProbed) return;
+    this.certProbed = true;
+    const seen = await this.probe(this.config);
+    if (generation !== this.generation || this.closed || !seen) return;
+    this.certSeen = seen;
+    await this.statusNow();
+  }
+
   async onCertificateMismatch() {
     this.logger.warn(
       `The certificate of ${this.config.brokerUrl} is not the pinned one (seen ${this.certSeen ?? 'none'})`,
@@ -542,6 +604,7 @@ export class DropApp {
     }
     this.flood.count += 1;
     if (this.flood.count > LIMITS.messagesPerSecond) {
+      this.flood.lastDrop = second;
       if (!this.flood.dropped) {
         this.flood.dropped = true;
         this.logger.warn('Too many MQTT messages: some dropped');
@@ -634,6 +697,20 @@ export class DropApp {
         entry.values.set(key, { value, at: mono, live: !retained });
       }
     }
+    const stop = this.stops.get(entry.pid);
+    if (stop && !retained && values.has('water')) {
+      if (values.get('water') === 0) {
+        this.liftStop(stop, 'confirmed');
+      } else if (
+        values.get('water') === 1 &&
+        stop.sends > 0 &&
+        !stop.held &&
+        mono - stop.lastSent >= TIMINGS.stopApplyDelay
+      ) {
+        // Contradicted: the water is still on after the shutoff left.
+        this.retryStop(stop);
+      }
+    }
     if (!retained) {
       for (const waiter of [...this.waiters]) {
         if (
@@ -652,7 +729,11 @@ export class DropApp {
     }
   }
 
-  /** The DROP type of an entry: what the hub announced in this connection, else the created device's. */
+  /**
+   * The DROP type of an entry: what the hub announced (kept across
+   * reconnections, replaced by a newer announcement), else the type of the
+   * device created in Gladys.
+   */
   typeOf(entry) {
     return entry.discovered?.type ?? typeOfCreated(this.createdDevice(entry));
   }
@@ -781,26 +862,179 @@ export class DropApp {
       if (!PROTECT_MODES.includes(value)) return { ok: false, text: C.badValue(name) };
       arg = value;
     }
-    if (!this.config[OPTION_OF[command]]) {
-      return { ok: false, text: C.notAllowed(name, command) };
-    }
     const job = { pid, hub: parsed.hub, device: parsed.device, name, command, arg, clickAt };
     if (command === 'close') {
-      return this.runClose(job);
+      // The stop: no option, nothing read before it leaves.
+      return this.clickClose(job);
+    }
+    if (!this.config[OPTION_OF[command]]) {
+      return { ok: false, text: C.notAllowed(name, command) };
     }
     return this.enqueue(job);
   }
 
-  /** The shutoff: never in the lane; cancels every command of the device still waiting there. */
-  runClose(job) {
-    this.stopSeq.set(job.pid, (this.stopSeq.get(job.pid) ?? 0) + 1);
-    this.closing.set(job.pid, { until: this.monotonic() + TIMINGS.confirmWatch, job });
-    return this.send(job, 'water', 0, COMMANDS.water(false));
+  /**
+   * The shutoff clicked: kept (memory, /data without waiting), every command
+   * of the hub still waiting its turn cancelled, sent now if connected, else
+   * right after the next SUBACK. Answered by 3.5 s; never refused.
+   */
+  async clickClose(job) {
+    this.stopSeq.set(job.hub, (this.stopSeq.get(job.hub) ?? 0) + 1);
+    this.commandSeq += 1;
+    const seq = this.commandSeq;
+    let stop = this.stops.get(job.pid);
+    if (!stop) {
+      stop = { pid: job.pid, hub: job.hub, device: job.device, sends: 0, lastSent: -Infinity };
+      this.stops.set(job.pid, stop);
+    }
+    Object.assign(stop, {
+      name: job.name,
+      at: this.now(),
+      budget: TIMINGS.stopResends,
+      held: false,
+      seq,
+    });
+    // Never awaited: a slow or failing /data never holds the shutoff back.
+    this.saveMemory().catch(() => {});
+    if (!this.mqttConnected || !this.client) {
+      this.wakeForStop();
+      return { ok: true, text: C.closeKept(job.name), seq };
+    }
+    const waiter = this.watch(job.pid, 'water', 0);
+    const written = await this.fireStop(stop);
+    if (written === 'error' || written === 'offline') {
+      waiter.cancel();
+      return { ok: true, text: C.closeKept(job.name), seq };
+    }
+    const confirmed = await waiter.until(job.clickAt + TIMINGS.commandAnswerBy);
+    waiter.cancel();
+    if (confirmed) {
+      return { ok: true, text: C.confirmed(job.name), seq };
+    }
+    return { ok: true, text: C.closeSentKept(job.name), seq };
+  }
+
+  /** A shutoff clicked while not connected because /data could not be read: connect anyway. */
+  wakeForStop() {
+    if (
+      this.started &&
+      !this.closed &&
+      !this.client &&
+      !this.config.problem &&
+      !this.refusedNow &&
+      !this.certStopped
+    ) {
+      this.start(this.rawConfig).catch((err) => this.logger.error(`Start failed: ${err.message}`));
+    }
+  }
+
+  /** The shutoffs read from /data, added to those clicked since the start. */
+  restoreStops() {
+    for (const s of this.memory.stops ?? []) {
+      const pid = platformId(s.hub, s.device);
+      if (this.stops.has(pid)) continue;
+      this.stops.set(pid, {
+        pid,
+        hub: s.hub,
+        device: s.device,
+        name: s.name || pid,
+        at: s.at,
+        budget: TIMINGS.stopResends,
+        sends: 0,
+        lastSent: -Infinity,
+        held: false,
+        seq: undefined,
+      });
+      this.logger.info(`Shutoff of ${s.name || pid} kept from before the restart: sent again`);
+    }
+    if (this.mqttConnected) {
+      this.fireAllStops();
+    }
+  }
+
+  /** At each connection: every shutoff kept leaves again, with a new budget. */
+  fireAllStops() {
+    for (const stop of this.stops.values()) {
+      stop.budget = TIMINGS.stopResends;
+      stop.held = false;
+      this.fireStop(stop).catch(() => {});
+    }
+  }
+
+  /** Sends one shutoff (QoS 0) and arms its check; 'ok' | 'error' | 'timeout' | 'offline'. */
+  fireStop(stop) {
+    const client = this.client;
+    if (!this.mqttConnected || !client) {
+      return Promise.resolve('offline');
+    }
+    stop.sends += 1;
+    stop.lastSent = this.monotonic();
+    this.armStopCheck(stop);
+    return new Promise((resolve) => {
+      const timer = this.timers.setTimeout(() => resolve('timeout'), TIMINGS.publishWait);
+      try {
+        client.publish(
+          commandTopic(stop.hub, stop.device),
+          COMMANDS.water(false),
+          { qos: 0, retain: false },
+          (err) => {
+            this.timers.clearTimeout(timer);
+            resolve(err ? 'error' : 'ok');
+          },
+        );
+      } catch {
+        this.timers.clearTimeout(timer);
+        resolve('error');
+      }
+    }).then((written) => {
+      if (written !== 'error') {
+        this.logger.info(`${stop.name}: shutoff sent (${stop.sends})`);
+      }
+      return written;
+    });
+  }
+
+  armStopCheck(stop) {
+    this.later(`stop:${stop.pid}`, stop.held ? TIMINGS.stopHeldEvery : TIMINGS.stopCheck, () =>
+      this.retryStop(stop),
+    );
+  }
+
+  /** Not seen applied (or contradicted): sent again within its budget, then held. */
+  retryStop(stop) {
+    if (this.stops.get(stop.pid) !== stop || !this.mqttConnected || this.closed) {
+      return;
+    }
+    if (stop.held) {
+      this.fireStop(stop).catch(() => {});
+    } else if (stop.budget > 0) {
+      stop.budget -= 1;
+      this.fireStop(stop).catch(() => {});
+    } else {
+      stop.held = true;
+      this.logger.warn(`${stop.name}: shutoff not seen applied, held (sent again every 10 min)`);
+      this.armStopCheck(stop);
+      this.statusSoon();
+    }
+  }
+
+  /** The shutoff seen applied, or let go by a turn-on that left after it. */
+  liftStop(stop, why) {
+    if (this.stops.get(stop.pid) !== stop) return;
+    this.stops.delete(stop.pid);
+    this.timers.clearTimeout(this.timersById[`stop:${stop.pid}`]);
+    this.timersById[`stop:${stop.pid}`] = undefined;
+    this.logger.info(`${stop.name}: shutoff ${why}`);
+    this.saveMemory().catch(() => {});
+    if (why === 'confirmed' && stop.seq !== undefined && this.lastCommand?.seq === stop.seq) {
+      this.setLast(C.confirmed(stop.name), stop.seq);
+    }
+    this.statusSoon();
   }
 
   /** The other commands: one at a time per device, answered by 3.5 s after the click. */
   enqueue(job) {
-    job.seq = this.stopSeq.get(job.pid) ?? 0;
+    job.seq = this.stopSeq.get(job.hub) ?? 0;
     const previous = this.lanes.get(job.pid) ?? Promise.resolve();
     const run = previous.then(() => this.runQueued(job));
     const tail = run.catch(() => {});
@@ -844,8 +1078,14 @@ export class DropApp {
 
   /** Why the water must not be turned on now, on what the hub said in this connection. */
   openRefusal(job, entry, mono) {
-    if ((this.closing.get(job.pid)?.until ?? -Infinity) > mono) {
-      return { ok: false, text: C.closing(job.name) };
+    for (const stop of this.stops.values()) {
+      if (stop.hub === job.hub && mono - stop.lastSent < TIMINGS.stopWindow) {
+        return { ok: false, text: C.closing(job.name) };
+      }
+    }
+    const second = Math.floor(mono / SECOND);
+    if (this.flood.lastDrop !== undefined && second - this.flood.lastDrop <= 1) {
+      return { ok: false, text: C.flooded(job.name) };
     }
     const water = entry?.heard ? entry.values.get('water')?.value : undefined;
     if (water === undefined) {
@@ -856,22 +1096,36 @@ export class DropApp {
       return { ok: false, text: C.leakUnknown(job.name) };
     }
     const leaking = [];
+    const unknown = [];
+    const seen = new Set();
     for (const other of this.registry.values()) {
-      if (other.hub !== job.hub || !other.heard) continue;
+      if (other.hub !== job.hub) continue;
       const type = this.typeOf(other);
-      if (
-        other.values.get('leak')?.value === 1 ||
-        (type === TYPES.ALERT && other.values.get('sens')?.value === 1)
-      ) {
-        leaking.push(
-          other === entry
-            ? job.name
-            : deviceName({ ...other, ...other.discovered, type }, this.config.language),
-        );
-      }
+      const key = LEAK_KEY[type];
+      if (!key) continue;
+      seen.add(other.pid);
+      const name =
+        other === entry
+          ? job.name
+          : (this.createdDevice(other)?.name ??
+            deviceName({ ...other, ...other.discovered, type }, this.config.language));
+      const value = other.heard ? other.values.get(key)?.value : undefined;
+      if (value === 1) leaking.push(name);
+      else if (value === undefined) unknown.push(name);
+    }
+    // Created in Gladys and never heard in this connection: unknown too.
+    for (const device of this.gladys.devices ?? []) {
+      const parsed = parseExternalId(device?.external_id);
+      if (!parsed || parsed.key || parsed.hub !== job.hub) continue;
+      const pid = platformId(parsed.hub, parsed.device);
+      if (seen.has(pid) || !LEAK_KEY[typeOfCreated(device)]) continue;
+      unknown.push(typeof device.name === 'string' ? device.name.slice(0, 60) : pid);
     }
     if (leaking.length > 0) {
       return { ok: false, text: C.leak(job.name, leaking.slice(0, 3).join(', ')) };
+    }
+    if (unknown.length > 0) {
+      return { ok: false, text: C.leakUnknownOthers(job.name, unknown.slice(0, 3).join(', ')) };
     }
     if (water === 1) {
       return { ok: true, text: C.already(job.name) };
@@ -887,14 +1141,12 @@ export class DropApp {
   async send(job, key, expected, payload) {
     const client = this.client;
     if (!this.mqttConnected || !client) {
-      this.endClosing(job);
       return { ok: false, text: C.offline(job.name) };
     }
     if (!this.config[OPTION_OF[job.command]]) {
-      this.endClosing(job);
       return { ok: false, text: C.notAllowed(job.name, job.command) };
     }
-    if (job.command !== 'close' && (this.stopSeq.get(job.pid) ?? 0) !== job.seq) {
+    if ((this.stopSeq.get(job.hub) ?? 0) !== job.seq) {
       return { ok: false, text: C.cancelled(job.name) };
     }
     this.commandSeq += 1;
@@ -921,34 +1173,30 @@ export class DropApp {
     });
     if (written === 'error') {
       waiter.cancel();
-      this.endClosing(job);
       return { ok: false, text: C.notSent(job.name) };
     }
     this.logger.info(`${job.name}: ${job.command} sent`);
+    if (job.command === 'open') {
+      // A turn-on that left lets go every shutoff of the hub kept before it.
+      for (const stop of [...this.stops.values()]) {
+        if (stop.hub === job.hub) this.liftStop(stop, 'let go by a turn-on sent after it');
+      }
+    }
     const sentAt = this.monotonic();
     const confirmed = await waiter.until(job.clickAt + TIMINGS.commandAnswerBy);
     if (confirmed) {
-      this.endClosing(job);
       waiter.cancel();
       return { ok: true, text: C.confirmed(job.name), seq };
     }
     // Still watched: the status says what the device shows within 20 s.
     waiter.until(sentAt + TIMINGS.confirmWatch).then((late) => {
       waiter.cancel();
-      this.endClosing(job);
       if (this.lastCommand?.seq === seq && !this.closed) {
         this.setLast(late ? C.confirmed(job.name) : C.noEffect(job.name), seq);
         this.statusNow().catch(() => {});
       }
     });
     return { ok: true, text: C.unconfirmed(job.name), seq };
-  }
-
-  /** The shutoff `job` no longer under way (a newer one of the same device stays). */
-  endClosing(job) {
-    if (this.closing.get(job.pid)?.job === job) {
-      this.closing.delete(job.pid);
-    }
   }
 
   /** A live message of `pid` showing `key` = `expected`, awaited until a monotonic time. */
@@ -1007,6 +1255,13 @@ export class DropApp {
       message = heard > 0 ? T.live(url, heard) : T.waiting(url);
       if (this.protocolVersion === 4) message = join(message, T.mqtt311);
     }
+    if (this.certSeen && !this.certStopped && !this.mqttConnected && this.config.tls) {
+      message = join(message, T.certSeen(this.certSeen));
+    }
+    if (this.stops.size > 0) {
+      const held = [...this.stops.values()].filter((stop) => stop.held).length;
+      message = join(message, T.stopsKept(this.stops.size, held));
+    }
     if (this.ignored.size > 0) message = join(message, T.ignored(this.ignored.size));
     if (this.flood.dropped) message = join(message, T.flood);
     if (this.lastCommand) message = join(message, T.lastCommand(this.lastCommand.text));
@@ -1060,7 +1315,7 @@ export class DropApp {
     if (this.memoryState !== 'ok') {
       // The user asks for it: /data unreadable is no longer a reason to wait.
       this.memoryState = 'ok';
-      this.memory = { refused: undefined };
+      this.memory = { refused: undefined, stops: [] };
       this.timers.clearTimeout(this.storeTimer);
       await this.saveMemory();
     }
@@ -1075,6 +1330,10 @@ export class DropApp {
   // --- Shutdown ----------------------------------------------------------------
 
   async shutdown() {
+    // The shutoffs kept are on /data before leaving (bounded wait, never blocking).
+    if (!this.closed && this.stops.size > 0) {
+      await this.saveMemory();
+    }
     this.closed = true;
     this.generation += 1;
     this.clearTimers();

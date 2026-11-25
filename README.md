@@ -5,9 +5,9 @@
 of the user: the DROP Hub publishes to it (topics `drop_connect/...`), the
 DROP cloud is never used. Hub, protection valve, leak detectors, softener,
 filters, salt sensor, alert, pump controller, reverse osmosis filter: flow,
-pressure, water used, leaks, batteries. Shutting the water off, turning it
-on, the bypass and the protect mode are each behind an off-by-default
-option, never a switch. **Never tested with a real device. Not affiliated
+pressure, water used, leaks, batteries. Shutting the water off always
+works and is kept until seen applied; turning it on, the bypass and the
+protect mode are each behind an off-by-default option; never a switch. **Never tested with a real device. Not affiliated
 with Chandler Systems.**
 
 User documentation: [docs/en.md](docs/en.md) · [docs/fr.md](docs/fr.md).
@@ -20,7 +20,7 @@ Gladys ⇄ SDK ⇄ src/handlers.js ⇄ src/app.js (DropApp)
                                   ├─ src/drop.js       topics, payloads (strict, bounded), units, command payloads (pure)
                                   ├─ src/devices.js    devices and states (pure)
                                   ├─ src/publisher.js  states within 300/min, nothing older than 2 min
-                                  └─ src/store.js      /data/drop-state.json (8-bit mark of refused credentials)
+                                  └─ src/store.js      /data/drop-state.json (shutoffs kept, 8-bit mark of refused credentials)
 ```
 
 - **Topics** (dropmqttapi 1.0.3): `drop_connect/discovery/<hub>/<n>`
@@ -34,17 +34,25 @@ Gladys ⇄ SDK ⇄ src/handlers.js ⇄ src/app.js (DropApp)
 - **Session**: everything heard is known for the current broker connection
   only (reset at each connection and disconnection; the retained messages
   fill it again).
-- **Commands**: four options, all off; checked at the click and right before
-  the publication; one at a time per device, the shutoff out of the lane and
-  cancelling what waits there; sent within 2 s of the click or never, QoS 0,
-  never queued nor retried; confirmed only by a later live message showing
-  the value; Gladys answered by 3.5 s; watched 20 s. Turning the water on:
-  refused on an unknown valve or leak state, any leak or sensor alert on the
-  hub, or a shutoff under way.
+- **Shutoff**: no option, out of every lane, cancels what waits on its hub;
+  kept in memory and `/data` until a live `water:0` of the device or a
+  turn-on of the hub that left after it; sent after the next SUBACK when
+  clicked offline, again after a restart, on a live contradiction (2 s after
+  sending), and every 20 s without confirmation (3 times), then every 10 min.
+- **Other commands**: three options, all off; checked at the click and right
+  before the publication; one at a time per device; sent within 2 s of the
+  click or never, QoS 0, never queued nor retried; confirmed only by a later
+  live message showing the value; Gladys answered by 3.5 s; watched 20 s.
+  Turning the water on: refused on an unknown valve or leak state (any
+  leak-capable device of the hub, announced or created), any leak or sensor
+  alert on the hub, messages dropped in the last 2 s, or a shutoff of the hub
+  sent less than 20 s ago.
 - **Broker**: MQTT 5 with `maximumPacketSize` (16 KB), 3.1.1 fallback, a
   guard on the socket; nothing written before TCP connects or TLS is
-  verified (authorities, or the pinned SHA-256); refused credentials stop it
-  for good (8-bit mark in `/data`) until other credentials or the button.
+  verified (authorities, or the pinned SHA-256; a refused certificate shows
+  its fingerprint, read on a connection that writes nothing); refused
+  credentials stop it for good (8-bit mark in `/data`) until other
+  credentials or the button.
 
 ## Credits
 

@@ -16,17 +16,19 @@ This repository: **DROP (Chandler Systems)** water management devices, read
 from the MQTT broker the DROP Hub publishes to (topics of dropmqttapi, MIT,
 see THIRD_PARTY_NOTICES.md). Decisions and open questions live in `TODO.md`.
 
-**Valve safety is not negotiable**: shutting the water off
-(`allow_water_close`), turning it on (`allow_water_open`), the bypass
-(`allow_bypass`) and the protect mode (`allow_mode_change`) stay off by
-default, are checked at the click and again right before the publication,
-and are never a `switch` nor a commandable binary. A shutoff never waits in
-the lane of its device and cancels what waits there. Turning the water on is
-decided on what the hub said in this broker connection (never on an older
-one), refused on an unknown valve or leak state, any leak or sensor alert of
-the hub, or a shutoff under way. A command leaves within 2 s of its click or
-never, once (QoS 0), and is confirmed only by a later live message. Keep the
-tests that prove it (`test/commands.test.js`).
+**Valve safety is not negotiable**: shutting the water off is the stop of
+this module and is never held back (no option, no read, no queue, no
+`/data` wait); it is kept in memory and in `/data` until a live message of
+the device shows the water off or a turn-on of the same hub leaves after it,
+sent again after a restart, at each connection, on a contradiction and
+without confirmation (3 times, then every 10 min). Turning the water on
+(`allow_water_open`), the bypass (`allow_bypass`) and the protect mode
+(`allow_mode_change`) stay off by default, are checked at the click and again
+right before the publication, and are never a `switch` nor a commandable
+binary. Turning the water on is decided on what the hub said in this broker
+connection, refused on any unknown leak state of the hub, any leak or sensor
+alert, dropped messages, or a shutoff of the hub sent less than 20 s ago.
+Keep the tests that prove it (`test/commands.test.js`).
 
 ## Commands
 
@@ -55,7 +57,7 @@ src/mqtt.js                       the only network access: MQTT over TCP/TLS, pa
 src/drop.js                       topics, payloads (strict, bounded), units, command payloads (pure)
 src/devices.js                    DROP devices -> Gladys devices and states (pure)
 src/publisher.js                  states to Gladys within 300/min, nothing older than 2 min
-src/store.js                      /data/drop-state.json (8-bit mark of refused credentials)
+src/store.js                      /data/drop-state.json (shutoffs kept, 8-bit mark of refused credentials)
 src/config.js                     DEFAULT_CONFIG (mirrors the manifest) + normalization
 src/constants.js, src/i18n.js     topics, keys, timings, limits; en/fr texts
 gladys-assistant-integration.json manifest: name, config_schema, actions

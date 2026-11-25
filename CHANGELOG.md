@@ -19,11 +19,17 @@ the notes of the version's GitHub Release.
 - Flow (m³/h), peak flow, water used today and average daily use (litres),
   pressure (PSI), temperature (°F), leaks, batteries, softener capacity and
   reserve, salt, pump, TDS, cartridge life, bypass and protect mode.
-- Shutting the water off, turning it on, the bypass and the protect mode,
-  each behind its own option, all off by default; never a switch. Turning the
-  water on is refused on any leak reported on the hub or an unknown state.
+- Shutting the water off, always allowed (no option, never a switch), kept
+  until the device shows the water off: sent at the next connection when
+  clicked offline, again after a restart, when contradicted and without a
+  confirmation.
+- Turning the water on, the bypass and the protect mode, each behind its own
+  option, off by default; never a switch. Turning the water on is refused on
+  any leak or unknown leak state of the hub, dropped messages, or a recent
+  shutoff.
 - MQTT over TCP or TLS (system authorities, or a pinned SHA-256 fingerprint
-  for a self-signed broker), MQTT 5 with a 3.1.1 fallback; every message
+  for a self-signed broker, the fingerprint of a refused certificate shown),
+  MQTT 5 with a 3.1.1 fallback; every message
   bounded to 16 KB; refused credentials never tried again by themselves.
 - Documentation in English and French.
 

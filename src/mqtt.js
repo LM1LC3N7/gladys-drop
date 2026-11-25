@@ -195,6 +195,44 @@ export function guardedStream(config, { onOpen, onCertificate } = {}) {
   return stream;
 }
 
+/**
+ * The SHA-256 fingerprint of the certificate a TLS broker presents, read on
+ * a connection that writes nothing (not a byte of MQTT, so no password) and
+ * is closed at once: shown in the status when the certificate is refused,
+ * for the user to pin it if they trust it. Undefined when unreadable.
+ */
+export function probeFingerprint(config, timeout = TIMINGS.probeTimeout) {
+  return new Promise((resolve) => {
+    let socket;
+    let timer;
+    const done = (fingerprint) => {
+      clearTimeout(timer);
+      socket?.destroy();
+      resolve(fingerprint);
+    };
+    timer = setTimeout(() => done(undefined), timeout);
+    try {
+      socket = tls.connect({
+        host: config.host,
+        port: config.port,
+        // Read only: nothing is ever written on this connection.
+        rejectUnauthorized: false,
+        ...(isIP(config.host) === 0 ? { servername: config.host } : {}),
+      });
+    } catch {
+      done(undefined);
+      return;
+    }
+    socket.once('secureConnect', () => done(peerFingerprint(socket)));
+    socket.once('error', () => done(undefined));
+  });
+}
+
+/** A TLS verification refusal (an unknown authority, a self-signed or expired certificate, another name). */
+export const isCertificateRefusal = (err) =>
+  typeof err?.code === 'string' &&
+  /CERT|SELF_SIGNED|UNABLE_TO_VERIFY|UNABLE_TO_GET_ISSUER|ERR_TLS_CERT/.test(err.code);
+
 export function connectBroker(
   config,
   {

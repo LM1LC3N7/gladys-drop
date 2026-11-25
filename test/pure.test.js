@@ -298,21 +298,17 @@ test('states: only the keys changed; text for the selects; power from pwrOff', (
 test('configuration: defaults off, URL checks, password needs a user, fingerprint format', () => {
   const c = normalizeConfig({});
   assert.equal(c.problem, 'broker:empty');
-  for (const key of [
-    'allow_water_close',
-    'allow_water_open',
-    'allow_bypass',
-    'allow_mode_change',
-  ]) {
+  assert.ok(!('allow_water_close' in DEFAULT_CONFIG));
+  for (const key of ['allow_water_open', 'allow_bypass', 'allow_mode_change']) {
     assert.equal(DEFAULT_CONFIG[key], false);
   }
   const allowed = normalizeConfig({
     broker_url: 'x',
     allow_water_open: 'yes',
-    allow_water_close: 1,
+    allow_bypass: 1,
   });
   assert.equal(allowed.allowWaterOpen, false, 'only true allows');
-  assert.equal(allowed.allowWaterClose, false);
+  assert.equal(allowed.allowBypass, false);
   assert.equal(normalizeConfig({ broker_url: 'x', allow_water_open: true }).allowWaterOpen, true);
   assert.deepEqual(parseBrokerUrl('192.168.1.2'), {
     url: 'mqtt://192.168.1.2',
@@ -362,7 +358,7 @@ test('/data: the mark is 8 bits, salted; unreadable is never empty', async (t) =
   assert.deepEqual(await store.load(), { ok: true, data: null });
   await store.save(serializeMemory({ refused: { salt, mark } }));
   const loaded = await store.load();
-  assert.deepEqual(normalizeMemory(loaded.data), { refused: { salt, mark } });
+  assert.deepEqual(normalizeMemory(loaded.data), { refused: { salt, mark }, stops: [] });
   assert.ok(!JSON.stringify(loaded.data).includes('secret'));
   await writeFile(join(dir, 'state.json'), '{not json');
   assert.deepEqual(await store.load(), { ok: false, reason: 'invalid' });
@@ -374,11 +370,52 @@ test('/data: the mark is 8 bits, salted; unreadable is never empty', async (t) =
     assert.deepEqual(await store.load(), { ok: false, reason: 'io' });
   }
   await chmod(join(dir, 'state.json'), 0o600);
-  assert.deepEqual(normalizeMemory({ refused: { salt: 'x', mark: 1 } }), { refused: undefined });
-  assert.deepEqual(normalizeMemory({ refused: { salt, mark: 256 } }), { refused: undefined });
+  assert.deepEqual(normalizeMemory({ refused: { salt: 'x', mark: 1 } }), {
+    refused: undefined,
+    stops: [],
+  });
+  assert.deepEqual(normalizeMemory({ refused: { salt, mark: 256 } }), {
+    refused: undefined,
+    stops: [],
+  });
   assert.deepEqual(normalizeMemory(JSON.parse('{"__proto__":{"refused":1}}')), {
     refused: undefined,
+    stops: [],
   });
   const failing = memoryStore(null, { failing: true });
   await assert.rejects(failing.save({}));
+});
+
+test('/data: the shutoffs kept, read strictly; a future date taken as now', () => {
+  const now = 1_800_000_000_000;
+  const memory = normalizeMemory(
+    {
+      stops: [
+        { hub: 'DROP-1_C0FFEE', device: '255', name: 'Hub\nx', at: now - 1000 },
+        { hub: 'DROP-1_C0FFEE', device: '78', name: 'Valve', at: now + 86_400_000 },
+        { hub: 'DROP-1_C0FFEE', device: '255', name: 'twice', at: now },
+        { hub: 'evil', device: '255', at: now },
+        { hub: 'DROP-A', device: '256', at: now },
+        { hub: 'DROP-A', device: '1', at: 'x' },
+        null,
+      ],
+    },
+    now,
+  );
+  assert.deepEqual(memory.stops, [
+    { hub: 'DROP-1_C0FFEE', device: '255', name: 'Hub x', at: now - 1000 },
+    { hub: 'DROP-1_C0FFEE', device: '78', name: 'Valve', at: now },
+    { hub: 'DROP-A', device: '1', name: '', at: now },
+  ]);
+  const many = Array.from({ length: 40 }, (_, i) => ({
+    hub: 'DROP-A',
+    device: String(i),
+    at: now,
+  }));
+  assert.equal(normalizeMemory({ stops: many }, now).stops.length, 16);
+  assert.deepEqual(serializeMemory({ refused: undefined, stops: [] }), {});
+  assert.deepEqual(
+    serializeMemory({ stops: [{ hub: 'DROP-A', device: '1', name: 'n', at: 5, extra: 1 }] }),
+    { stops: [{ hub: 'DROP-A', device: '1', name: 'n', at: 5 }] },
+  );
 });

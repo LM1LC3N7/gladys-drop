@@ -1,8 +1,8 @@
 // -----------------------------------------------------------------------------
 // The app on a REAL moving clock (performance.now, setTimeout), sped up 10
-// times: the publications to Gladys every second (never sooner), a command
+// times: the publications to Gladys every second (never sooner), a shutoff
 // without confirmation answered at 3.5 s (never later, never much sooner),
-// its effect watched 20 s, and no timer left after shutdown().
+// sent again at 20 s, and no timer left after shutdown().
 // -----------------------------------------------------------------------------
 
 import { test } from 'node:test';
@@ -19,7 +19,7 @@ import { fakeConnector } from './helpers/fakeMqtt.js';
 
 const SPEED = 10;
 
-test('real clock: flushes every second, answers by 3.5 s, watches 20 s, leaves no timer', async (t) => {
+test('real clock: flushes every second, answers by 3.5 s, sends a shutoff again at 20 s, leaves no timer', async (t) => {
   const clock = realClock({ speed: SPEED });
   const live = new Set();
   const timers = {
@@ -83,18 +83,15 @@ test('real clock: flushes every second, answers by 3.5 s, watches 20 s, leaves n
   assert.equal(connector.last.published.length, 1);
   assert.ok(answeredAfter >= TIMINGS.commandAnswerBy - 50, `answered after ${answeredAfter} ms`);
   assert.ok(answeredAfter < TIMINGS.commandAnswerBy + 1500, `answered after ${answeredAfter} ms`);
-  assert.match(gladys.fake.connectionStatus.message.en, /sent, without confirmation/);
-  // The watch: "not applied" at 20 s after sending, not before.
-  await new Promise((resolve) => setTimeout(resolve, (TIMINGS.confirmWatch - 6000) / SPEED));
-  assert.match(gladys.fake.connectionStatus.message.en, /sent, without confirmation/);
+  assert.match(gladys.fake.connectionStatus.message.en, /shutoff sent, not confirmed yet/);
+  // Kept: sent again 20 s after it left (simulated), not before.
+  await new Promise((resolve) => setTimeout(resolve, (TIMINGS.stopCheck - 6000) / SPEED));
+  assert.equal(connector.last.published.length, 1, 'not sent again before 20 s');
   const until = performance.now() + 2000;
-  while (
-    !/did not show it applied/.test(gladys.fake.connectionStatus.message.en) &&
-    performance.now() < until
-  ) {
+  while (connector.last.published.length < 2 && performance.now() < until) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  assert.match(gladys.fake.connectionStatus.message.en, /did not show it applied within 20 s/);
+  assert.equal(connector.last.published.length, 2, 'sent again at 20 s');
 
   await app.shutdown();
   assert.equal(live.size, 0, `${live.size} timer(s) left after shutdown`);

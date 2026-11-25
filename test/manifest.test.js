@@ -105,7 +105,7 @@ test('no capture, no sub-container', () => {
   assert.equal(manifest.containers, undefined);
 });
 
-test('the configuration matches the code; every command is off by default', () => {
+test('the configuration matches the code; every command but the shutoff is off by default', () => {
   const fields = Object.fromEntries(manifest.config_schema.map((f) => [f.key, f]));
   for (const [key, value] of Object.entries(DEFAULT_CONFIG)) {
     assert.ok(fields[key], `${key} is not in the config_schema`);
@@ -118,12 +118,9 @@ test('the configuration matches the code; every command is off by default', () =
   for (const field of manifest.config_schema.filter((f) => f.default !== undefined)) {
     assert.ok(field.key in DEFAULT_CONFIG, `${field.key} has no default in the code`);
   }
-  for (const key of [
-    'allow_water_close',
-    'allow_water_open',
-    'allow_bypass',
-    'allow_mode_change',
-  ]) {
+  assert.equal(fields.allow_water_close, undefined, 'the shutoff is never behind an option');
+  assert.ok(!('allow_water_close' in DEFAULT_CONFIG));
+  for (const key of ['allow_water_open', 'allow_bypass', 'allow_mode_change']) {
     assert.equal(fields[key].type, 'boolean', key);
     assert.equal(fields[key].default, false, key);
     assert.equal(DEFAULT_CONFIG[key], false, key);

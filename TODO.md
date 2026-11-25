@@ -42,14 +42,27 @@ up to date at the end of every milestone.
 - **Manifest**: `countries: ["US"]` (DROP sells in the United States only)
   with `gladys_version: ">=5.3.0"` (Louis, 2026-11-12); categories
   `security` (leaks, shutoff) and `energy` (water use); no `keywords`.
-- **Shutting the water off is behind an option too** (`allow_water_close`,
-  off), unlike gladys-guardian where closing is never held: the brief of lot
-  25 asks for both directions off by default, as gladys-flo. Once allowed, it
-  is treated as the stop: out of the lane of its device, cancelling what
-  waits there, sent even when the valve looks closed already, never refused
-  on a missing state. It is sent once (DROP has no acknowledgement and no
-  read request: a resend would be blind); its effect is watched 20 s in the
-  status.
+- **Review r1 (2026-11-25)**: shutting the water off is the stop, never held
+  back (coordinator's decision, as gladys-guardian): `allow_water_close`
+  removed (B1). The shutoff is kept per device in memory and in `/data`
+  (`stops`, 16 at most, a future date taken as now) until a live `water:0`
+  of the device or a turn-on of the same hub that left after it; clicked
+  offline it is answered "kept" and sent right after the next SUBACK
+  (without waiting for a hub message); sent again after a restart, at each
+  connection (new budget), on a live `water:1` 2 s or more after it left,
+  and 20 s after each send without confirmation: 3 times, then every 10 min
+  ("held", in the status); a failed save never delays it; a shutoff clicked
+  while `/data` is unreadable connects anyway and never writes over the file
+  (B2). QoS 0 kept: our own resends replace mqtt.js's. Turning the water on
+  is refused while any leak-capable device of the hub (hub, pv, leak, pc,
+  ro; alrt by `sens`), announced or created in Gladys, has no known state in
+  this connection, named in the refusal (I1); while messages were dropped in
+  the current or previous second (m1); within 20 s of a shutoff of the same
+  hub, and a shutoff cancels the queued commands of its whole hub (m2: which
+  valve the hub's `water` drives is unknown). A refused TLS certificate shows
+  its fingerprint, read on a connection that writes nothing (m3). Away stays
+  behind `allow_mode_change` (m4, said in the docs). The type of a device
+  comes from the hub's last announcement, kept across reconnections (m5).
 - **No read request in DROP**: decisions rest on what the hub published in
   the current broker connection (values reset at each connection and
   disconnection; retained messages count, they are the hub's last word).
@@ -62,14 +75,15 @@ up to date at the end of every milestone.
 - **QoS 0 for commands**: with QoS 1, mqtt.js keeps the message and sends it
   again after a reconnection, possibly minutes later; QoS 0 with
   `queueQoSZero: false` leaves now or never.
-- **Turn on** refused on: option off, not connected, valve state or the
-  device's own leak state unknown, a leak reported by any device of the hub
-  (`leak` = 1) or a sensor alert (`sens` = 1), a shutoff under way (20 s), a
-  shutoff clicked since, more than 2 s waiting for its turn.
+- **Turn on** refused on: option off, not connected, valve state or any leak
+  state of the hub unknown, a leak reported by any device of the hub (`leak`
+  = 1) or a sensor alert (`sens` = 1), messages dropped (2 s), a shutoff of
+  the hub sent in the last 20 s or clicked since, more than 2 s waiting for
+  its turn.
 - **Identity**: `drop:<hub>_<n>` (Home Assistant's unique id). Only the
   device 255 may be a hub, and a hub only at 255 (dropmqttapi). The type comes
-  from the discovery of this connection, else from the device created in
-  Gladys; both known and different: commands refused ("scan again").
+  from the hub's last announcement (kept across reconnections), else from the
+  device created in Gladys; both known and different: commands refused ("scan again").
 - **Units**: gallons -> litres, gpm -> m³/h (exact factors); PSI and °F kept
   (both listed by the core for their category). TDS: no category takes ppm,
   so a plain integer with "(ppm)" in its name. Cartridge life: `maintenance /
@@ -87,8 +101,11 @@ life-remaining` (core 4.86+).
 - **Battery 0**: published as 0 (the Home Assistant fixture of a protection
   valve has `battery: 0`; whether that means "mains powered" is to check).
 - **Unknown device types** are ignored and counted in the status.
-- **Mutants (milestone 1)**: 44 in `scripts/mutants.json`, run one at a time
-  (`node scripts/mutants.mjs`): 43 killed. #38 (the writes of `src/mqtt.js`
+- **Mutants (r1)**: 62 in `scripts/mutants.json` (the shutoff kept, its
+  resends, /data, the unknown leak states, the flood, the hub-wide cancel,
+  the probe), run one at a time (`node scripts/mutants.mjs`): 61 killed; the
+  suite passed 20 times in `node:22-alpine` (3 GB). Milestone 1 had 44
+  mutants, 43 killed. #38 (the writes of `src/mqtt.js`
   not held until the transport is verified) survives as equivalent under
   Node 22/24: net and TLS sockets already buffer what is written before the
   connection or the handshake, and the pinned check runs first in

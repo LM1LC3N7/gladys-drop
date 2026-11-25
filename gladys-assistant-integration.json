@@ -22,8 +22,8 @@
         "fr": "Votre hub DROP"
       },
       "description": {
-        "en": "Shows your DROP devices (Chandler Systems) in Gladys through your own MQTT broker, without the DROP cloud: hub, protection valve, leak detectors, softener, filters, salt, pump controller, reverse osmosis; flow, pressure, water used. In the DROP Connect app, set the hub to publish to your broker (Mosquitto...), enter the broker below, save, then add the devices from the Discovery tab. Shutting the water off, turning it on, the bypass and the protect mode stay off until you allow each below. Anyone who can publish on your broker can command the valve: protect it with a password. Never tested with a real device. Not affiliated with Chandler Systems.",
-        "fr": "Affiche vos appareils DROP (Chandler Systems) dans Gladys par votre propre broker MQTT, sans le cloud DROP : hub, vanne de protection, détecteurs de fuite, adoucisseur, filtres, sel, contrôleur de pompe, osmoseur ; débit, pression, eau consommée. Dans l'application DROP Connect, faites publier le hub vers votre broker (Mosquitto...), saisissez le broker ci-dessous, enregistrez, puis ajoutez les appareils depuis l'onglet Découverte. Couper l'eau, l'ouvrir, le bypass et le mode de protection restent désactivés tant que vous ne les autorisez pas ci-dessous. Toute personne qui peut publier sur votre broker peut commander la vanne : protégez-le par un mot de passe. Jamais testé avec un vrai appareil. Sans lien avec Chandler Systems."
+        "en": "Shows your DROP devices (Chandler Systems) in Gladys through your own MQTT broker, without the DROP cloud: hub, protection valve, leak detectors, softener, filters, salt, pump controller, reverse osmosis; flow, pressure, water used. In the DROP Connect app, set the hub to publish to your broker (Mosquitto...), enter the broker below, save, then add the devices from the Discovery tab. Shutting the water off always works (never a switch: a \"turn everything off\" cannot touch it); turning it on, the bypass and the protect mode stay off until you allow each below. Anyone who can publish on your broker can command the valve: protect it with a password. Never tested with a real device. Not affiliated with Chandler Systems.",
+        "fr": "Affiche vos appareils DROP (Chandler Systems) dans Gladys par votre propre broker MQTT, sans le cloud DROP : hub, vanne de protection, détecteurs de fuite, adoucisseur, filtres, sel, contrôleur de pompe, osmoseur ; débit, pression, eau consommée. Dans l'application DROP Connect, faites publier le hub vers votre broker (Mosquitto...), saisissez le broker ci-dessous, enregistrez, puis ajoutez les appareils depuis l'onglet Découverte. Couper l'eau marche toujours (jamais un interrupteur : un « tout éteindre » ne peut pas y toucher) ; l'ouvrir, le bypass et le mode de protection restent désactivés tant que vous ne les autorisez pas ci-dessous. Toute personne qui peut publier sur votre broker peut commander la vanne : protégez-le par un mot de passe. Jamais testé avec un vrai appareil. Sans lien avec Chandler Systems."
       },
       "links": [
         {
@@ -95,8 +95,8 @@
         "fr": "Empreinte du certificat (mqtts, facultatif)"
       },
       "description": {
-        "en": "Only for a broker in TLS with a self-signed certificate: its SHA-256 fingerprint (64 hexadecimal digits, colons allowed). The connection is then accepted for this certificate only; another one stops it and the status shows the fingerprint seen. Empty: the certificate must be signed by a known authority.",
-        "fr": "Seulement pour un broker en TLS au certificat auto-signé : son empreinte SHA-256 (64 caractères hexadécimaux, deux-points permis). La connexion n'est alors acceptée que pour ce certificat ; un autre l'arrête et le statut affiche l'empreinte vue. Vide : le certificat doit être signé par une autorité connue."
+        "en": "Only for a broker in TLS with a self-signed certificate: its SHA-256 fingerprint (64 hexadecimal digits, colons allowed). The connection is then accepted for this certificate only; another one stops it. A certificate refused shows its fingerprint in the status (read without sending anything). Empty: the certificate must be signed by a known authority.",
+        "fr": "Seulement pour un broker en TLS au certificat auto-signé : son empreinte SHA-256 (64 caractères hexadécimaux, deux-points permis). La connexion n'est alors acceptée que pour ce certificat ; un autre l'arrête. Un certificat refusé affiche son empreinte dans le statut (lue sans rien envoyer). Vide : le certificat doit être signé par une autorité connue."
       },
       "placeholder": {
         "en": "AB:CD:...",
@@ -106,20 +106,6 @@
       "default": ""
     },
     {
-      "key": "allow_water_close",
-      "type": "boolean",
-      "label": {
-        "en": "Allow shutting the water off",
-        "fr": "Autoriser la coupure de l'eau"
-      },
-      "description": {
-        "en": "Off by default. On: the \"Shut the water off\" button of the hub and of the protection valves closes the valve. Off: it refuses every command.",
-        "fr": "Désactivé par défaut. Activé : le bouton « Couper l'eau » du hub et des vannes de protection ferme la vanne. Désactivé : il refuse toute commande."
-      },
-      "required": false,
-      "default": false
-    },
-    {
       "key": "allow_water_open",
       "type": "boolean",
       "label": {
@@ -127,8 +113,8 @@
         "fr": "Autoriser l'ouverture de l'eau"
       },
       "description": {
-        "en": "Off by default. On: the \"Turn the water on\" button opens the valve, only when the device has said in this connection that its valve is closed and that it has no leak, no device of the same hub reports a leak, and no shutoff is under way. Off: it refuses every command.",
-        "fr": "Désactivé par défaut. Activé : le bouton « Ouvrir l'eau » ouvre la vanne, seulement si l'appareil a dit dans cette connexion que sa vanne est fermée et qu'il n'a pas de fuite, qu'aucun appareil du même hub ne signale de fuite et qu'aucune coupure n'est en cours. Désactivé : il refuse toute commande."
+        "en": "Off by default. On: the \"Turn the water on\" button opens the valve, only when the device has said in this connection that its valve is closed and that it has no leak, every leak-capable device of the same hub has a known state without a leak or alert, and no shutoff of the hub left in the last 20 s. A turn-on that leaves lets go the shutoffs kept on the hub. Off: it refuses every command. Shutting the water off always works.",
+        "fr": "Désactivé par défaut. Activé : le bouton « Ouvrir l'eau » ouvre la vanne, seulement si l'appareil a dit dans cette connexion que sa vanne est fermée et qu'il n'a pas de fuite, que chaque appareil du même hub capable de signaler une fuite a un état connu sans fuite ni alerte, et qu'aucune coupure du hub n'est partie depuis 20 s. Une ouverture qui part abandonne les coupures gardées du hub. Désactivé : il refuse toute commande. Couper l'eau marche toujours."
       },
       "required": false,
       "default": false
@@ -155,8 +141,8 @@
         "fr": "Autoriser le changement du mode de protection"
       },
       "description": {
-        "en": "Off by default. On: the protect mode of the hub (Home, Away, Schedule) can be changed from Gladys; Away is the strictest. Off: refused.",
-        "fr": "Désactivé par défaut. Activé : le mode de protection du hub (Maison, Absent, Programmé) peut être changé depuis Gladys ; Absent est le plus strict. Désactivé : refusé."
+        "en": "Off by default. On: the protect mode of the hub (Home, Away, Schedule) can be changed from Gladys; Away is the strictest. Off: refused. Changing the mode is not a shutoff: it stays behind this option, Away included.",
+        "fr": "Désactivé par défaut. Activé : le mode de protection du hub (Maison, Absent, Programmé) peut être changé depuis Gladys ; Absent est le plus strict. Désactivé : refusé. Changer de mode n'est pas une coupure : cela reste derrière cette option, Absent compris."
       },
       "required": false,
       "default": false
