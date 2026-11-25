@@ -6,8 +6,8 @@
     "en": "DROP water management over local MQTT: shutoff valve, leaks, softener, flow.",
     "fr": "Gestion de l'eau DROP par MQTT local : vanne, fuites, adoucisseur, débit."
   },
-  "version": "0.1.0",
-  "docker_image": "ghcr.io/lm1lc3n7/gladys-drop:0.1.0",
+  "version": "0.1.1",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-drop:0.1.1",
   "gladys_version": ">=5.3.0",
   "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-drop/main/cover.png",
   "categories": ["security", "energy"],

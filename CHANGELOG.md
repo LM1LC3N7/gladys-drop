@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-25
+
 ### Added
 
 - DROP water management (Chandler Systems) through the MQTT broker of the
@@ -35,4 +37,5 @@ the notes of the version's GitHub Release.
   bounded to 16 KB; refused credentials never tried again by themselves.
 - Documentation in English and French.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-drop/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-drop/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-drop/releases/tag/v0.1.1
