@@ -8,16 +8,33 @@ contributors.
 A Gladys Assistant **external integration**: a Node.js service (Node 22+, ESM,
 no build step) that runs in its own sandboxed Docker container and talks to
 Gladys through
-[`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js),
-its only runtime dependency. It started from the official JavaScript template.
+[`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js)
+and to the MQTT broker of the user through `mqtt` (mqtt.js), its two runtime
+dependencies. It started from the official JavaScript template.
+
+This repository: **DROP (Chandler Systems)** water management devices, read
+from the MQTT broker the DROP Hub publishes to (topics of dropmqttapi, MIT,
+see THIRD_PARTY_NOTICES.md). Decisions and open questions live in `TODO.md`.
+
+**Valve safety is not negotiable**: shutting the water off
+(`allow_water_close`), turning it on (`allow_water_open`), the bypass
+(`allow_bypass`) and the protect mode (`allow_mode_change`) stay off by
+default, are checked at the click and again right before the publication,
+and are never a `switch` nor a commandable binary. A shutoff never waits in
+the lane of its device and cancels what waits there. Turning the water on is
+decided on what the hub said in this broker connection (never on an older
+one), refused on an unknown valve or leak state, any leak or sensor alert of
+the hub, or a shutoff under way. A command leaves within 2 s of its click or
+never, once (QoS 0), and is confirmed only by a later live message. Keep the
+tests that prove it (`test/commands.test.js`).
 
 ## Commands
 
 ```bash
 npm install
-npm test                                  # node --test, the built-in runner
-node --test test/devices.test.js          # one file
-node --test --test-name-pattern "plug"    # tests whose name matches
+npm test                                  # node --test --test-timeout=60000
+node --test test/commands.test.js        # one file
+node --test --test-name-pattern "turn on" # tests whose name matches
 npm run lint                              # ESLint
 npm run format:check                      # Prettier, as the CI runs it
 npm run format                            # Prettier, fix in place
@@ -31,16 +48,21 @@ pushing.
 ## Architecture
 
 ```
-index.js                          SDK wiring only: handlers registered before connect()
-src/devices/index.js              registry of the device blueprints + dispatch helpers
-src/devices/<type>.js             one device type per file (buildDevice, onPoll, onSetValue...)
-src/scenes.js                     scene action handlers (manifest `scene_actions`)
-src/widgets.js                    dashboard widget handlers (manifest `widgets`)
-src/config.js                     DEFAULT_CONFIG (mirrors the manifest defaults) + normalization
-src/weather.js                    example driver (Open-Meteo)
-gladys-assistant-integration.json manifest: name, config_schema, actions, image...
+index.js                          SDK wiring only (src/handlers.js registers before connect())
+src/handlers.js                   the SDK handlers -> DropApp (shared with the tests)
+src/app.js                        DropApp: connection, messages, devices, commands, status
+src/mqtt.js                       the only network access: MQTT over TCP/TLS, packets bounded, pinned certificate
+src/drop.js                       topics, payloads (strict, bounded), units, command payloads (pure)
+src/devices.js                    DROP devices -> Gladys devices and states (pure)
+src/publisher.js                  states to Gladys within 300/min, nothing older than 2 min
+src/store.js                      /data/drop-state.json (8-bit mark of refused credentials)
+src/config.js                     DEFAULT_CONFIG (mirrors the manifest) + normalization
+src/constants.js, src/i18n.js     topics, keys, timings, limits; en/fr texts
+gladys-assistant-integration.json manifest: name, config_schema, actions
 docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
-test/                             node --test, against the SDK's fake Gladys (integration-sdk/testing)
+test/                             node --test, SDK fake Gladys + test/helpers (fake client, real local broker)
+test/kit/                         clocks and test certificates of gladys-testkit
+scripts/mutants.mjs, mutants.json the mutants of the guards (run one at a time, not in the CI)
 .github/scripts/release.mjs       release helpers (manifest bump, changelog), tested in test/
 ```
 
@@ -52,14 +74,6 @@ test/                             node --test, against the SDK's fake Gladys (in
   devices, their history, scenes and dashboards on them: changing one creates a
   new device and orphans the old one. The same goes for every key users store:
   manifest `config_schema`, `actions`, widget and scene keys, feature keys.
-- **Every feature carries `name`, `min`, `max`, `read_only` and
-  `has_feedback`**, even where they mean nothing: Gladys stores them NOT NULL.
-  `min`/`max` are `0`/`1` for a binary feature, the real range for a numeric
-  one, `0`/`0` for a feature without a range (text, image...). A missing one
-  can pass the publication on a core that does not check it, then fail when
-  the user clicks "Add" (HTTP 422 `t_device_feature.min cannot be null`). The
-  SDK's fake Gladys refuses it on publication, and `test/devices.test.js`
-  checks them.
 - **The container rootfs is read-only.** Write only under `/data`, the one
   writable volume. Never log tokens, passwords or API keys.
 - **Versions belong to the Release workflow** (Actions → Release). Never edit
@@ -81,4 +95,7 @@ test/                             node --test, against the SDK's fake Gladys (in
 - **User-facing text** is bilingual (English and French): action messages,
   manifest texts, and `docs/en.md` / `docs/fr.md`, kept in sync.
 - **Style.** Prettier formats, ESLint catches mistakes. Comments explain why,
-  in English. Tests never touch the network.
+  in English. Tests never touch the network, and pass on Node 22 and 24.
+- **Encoding.** Text files are UTF-8 without BOM; `test/manifest.test.js`
+  refuses mojibake and a BOM. Write files with an editor, never with
+  PowerShell's `Set-Content`/`Out-File` defaults.

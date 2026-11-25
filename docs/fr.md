@@ -1,67 +1,107 @@
-# Template de démonstration
+# DROP (Chandler Systems)
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+Cette intégration affiche dans Gladys les appareils de gestion de l'eau **DROP**
+(Chandler Systems, États-Unis) par **votre propre broker MQTT**, en local, sans le
+cloud DROP : le hub publie ses données vers votre broker (Mosquitto…), Gladys les y lit.
 
-## Ce que vous obtenez
+Non officielle, sans lien avec Chandler Systems. **Jamais testé avec un vrai appareil** :
+elle suit les sujets MQTT publiés par le fabricant (dropmqttapi) et l'intégration Home
+Assistant. Vos retours sont précieux.
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+## Ce qui est affiché
 
-## Configuration
+| Appareil DROP       | Fonctionnalités                                                                                                                                                                                                                                      |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hub                 | eau ouverte, couper l'eau, ouvrir l'eau, fuite, débit, débit maximal du jour, eau consommée aujourd'hui, consommation moyenne par jour, pression (actuelle, maximale et minimale du jour), bypass, mode de protection, notification en attente, pile |
+| Vanne de protection | eau ouverte, couper l'eau, ouvrir l'eau, fuite, débit, pression, température, pile                                                                                                                                                                   |
+| Détecteur de fuite  | fuite, température, pile                                                                                                                                                                                                                             |
+| Adoucisseur         | capacité restante, réserve en service, débit, pression, bypass, pile                                                                                                                                                                                 |
+| Filtre              | débit, pression, bypass, pile                                                                                                                                                                                                                        |
+| Capteur de sel      | sel bas                                                                                                                                                                                                                                              |
+| Alerte              | alerte du capteur, alimenté, température, pile                                                                                                                                                                                                       |
+| Contrôleur de pompe | pompe en marche, fuite, débit, pression, température                                                                                                                                                                                                 |
+| Osmoseur            | fuite, TDS à l'entrée et à la sortie (ppm), vie des cartouches 1 à 3                                                                                                                                                                                 |
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+Unités : les gallons deviennent des litres, les gallons par minute des m³/h ; la pression
+reste en PSI et la température en °F (Gladys les convertit à l'affichage). Une valeur
+absente, vide ou hors limites reste inconnue : jamais publiée comme 0.
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+## Mise en place
 
-## Actions
+1. Un broker MQTT sur votre réseau (Mosquitto, ou celui de votre box domotique), de
+   préférence avec un utilisateur et un mot de passe.
+2. Dans l'application DROP Connect, réglez le hub pour qu'il publie vers ce broker
+   (la même réglage que pour Home Assistant). Les sujets commencent par `drop_connect/`.
+3. Dans Gladys, saisissez l'adresse du broker (`192.168.1.20`, ou
+   `mqtts://broker.lan:8883` en TLS), l'utilisateur et le mot de passe, enregistrez.
+4. Onglet **Découverte** : ajoutez les appareils annoncés par le hub.
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+Broker en TLS au certificat auto-signé : saisissez l'empreinte SHA-256 de son certificat.
+La connexion n'est alors acceptée que pour ce certificat ; un autre certificat arrête tout
+avant l'envoi du mot de passe et le statut affiche l'empreinte vue. Sans empreinte, le
+certificat doit être signé par une autorité connue.
 
-## Scènes
+## Commandes : toutes désactivées par défaut
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+Chacune a sa case dans la configuration. Ce ne sont jamais des interrupteurs : un « tout
+éteindre » ou un assistant vocal ne peut pas toucher la vanne. Couper et ouvrir l'eau sont
+deux boutons ; le bypass et le mode de protection sont des listes.
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+L'option est relue au clic et encore juste avant l'envoi. Une commande part dans les 2 s
+de son clic, une seule fois (jamais mise en attente ni renvoyée), sinon elle n'est pas
+envoyée. Gladys a sa réponse en 3,5 s au plus : « fait, confirmé par l'appareil » (un
+message de l'appareil reçu après l'envoi montre la valeur demandée), « envoyé, sans
+confirmation » (le statut dit ensuite si l'appareil l'a montré dans les 20 s), ou un refus
+qui finit par « Rien envoyé ». La dernière commande s'affiche dans le statut de la page de
+configuration.
 
-## Tableau de bord
+**Couper l'eau** (hub, vanne de protection) n'est refusé que dans ces cas :
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+- « Autoriser la coupure de l'eau » est décochée ;
+- Gladys n'est pas connecté au broker ;
+- le broker ne prend pas la commande ;
+- le hub annonce maintenant un autre type pour cet appareil (relancez une découverte).
 
-## Dépannage
+Elle ne passe pas derrière les autres commandes de l'appareil : elle part tout de suite
+et annule celles qui attendent encore leur tour (rien de cliqué avant une coupure ne part
+après elle). Elle part même si la vanne semble déjà fermée.
 
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+**Ouvrir l'eau** n'est envoyé que si tout cela est vrai, d'après ce que le hub a publié
+depuis la connexion au broker (DROP n'a pas de requête de lecture ; à chaque connexion ou
+déconnexion, tout redevient inconnu jusqu'aux messages suivants) :
+
+- « Autoriser l'ouverture de l'eau » est cochée, au clic et juste avant l'envoi ;
+- l'état de la vanne de l'appareil est connu ; déjà ouverte : rien n'est envoyé ;
+- son état de fuite est connu et sans fuite ;
+- aucun appareil du même hub ne signale de fuite (détecteurs, vanne, pompe, osmoseur)
+  ni d'alerte de capteur ;
+- aucune coupure de cet appareil n'est en cours (envoyée depuis moins de 20 s sans
+  confirmation) ;
+- aucune coupure n'a été cliquée depuis ce clic.
+
+**Bypass** (hub, adoucisseur, filtre ; activé : l'eau contourne le traitement) et **mode de
+protection** (hub : Maison, Absent, Programmé ; Absent est le plus strict) : refusés si leur
+option est décochée ; rien n'est envoyé s'ils sont déjà dans l'état demandé.
+
+## Sécurité
+
+- Toute personne qui peut publier sur votre broker peut commander la vanne et inventer des
+  messages du hub : protégez le broker par un mot de passe et des droits (ACL), gardez-le
+  sur un réseau de confiance.
+- Le mot de passe est gardé par Gladys dans sa base, jamais réaffiché, envoyé seulement à
+  votre broker ; il n'apparaît ni dans les journaux, ni dans `/data`, ni dans le statut.
+- Identifiants refusés par le broker : l'intégration s'arrête et ne réessaie pas d'elle-même,
+  même après un redémarrage (elle garde dans `/data` une marque de 8 bits, inutilisable pour
+  retrouver le mot de passe). Enregistrez d'autres identifiants ou cliquez sur « Tester la
+  connexion ». Un mot de passe sur 256 tombe sur la même marque : le bouton lève alors l'arrêt.
+- Chaque message du broker est limité à 16 Ko avant d'être lu ; au-delà de 200 messages par
+  seconde, les suivants sont ignorés ; 8 hubs et 64 appareils au plus.
+
+## Limites
+
+- Jamais testé avec un vrai appareil ; le nom du réglage MQTT dans l'application DROP
+  Connect peut différer.
+- Le hub publie à son rythme : une valeur peut rester longtemps sans mise à jour (rien
+  n'est inventé entre deux messages).
+- Un type d'appareil que le hub annonce et que l'intégration ne connaît pas est ignoré
+  (compté dans le statut).

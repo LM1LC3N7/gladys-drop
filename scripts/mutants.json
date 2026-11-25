@@ -1,0 +1,266 @@
+[
+  {
+    "name": "decide: the option not checked at the click",
+    "file": "src/app.js",
+    "from": "    if (!this.config[OPTION_OF[command]]) {\n      return { ok: false, text: C.notAllowed(name, command) };",
+    "to": "    if (false) {\n      return { ok: false, text: C.notAllowed(name, command) };"
+  },
+  {
+    "name": "send: the option not read again before the publication",
+    "file": "src/app.js",
+    "from": "    if (!this.config[OPTION_OF[job.command]]) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "runClose: a shutoff does not cancel what waits",
+    "file": "src/app.js",
+    "from": "    this.stopSeq.set(job.pid, (this.stopSeq.get(job.pid) ?? 0) + 1);",
+    "to": "    void 0;"
+  },
+  {
+    "name": "send: a cancelled command still leaves",
+    "file": "src/app.js",
+    "from": "    if (job.command !== 'close' && (this.stopSeq.get(job.pid) ?? 0) !== job.seq) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "runQueued: no 2 s limit",
+    "file": "src/app.js",
+    "from": "    if (mono - job.clickAt > TIMINGS.commandSendBy) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "open: a shutoff under way ignored",
+    "file": "src/app.js",
+    "from": "    if ((this.closing.get(job.pid)?.until ?? -Infinity) > mono) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "open: unknown valve state accepted",
+    "file": "src/app.js",
+    "from": "    if (water === undefined) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "open: unknown leak state accepted",
+    "file": "src/app.js",
+    "from": "    if (leak === undefined) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "open: a leak elsewhere on the hub ignored",
+    "file": "src/app.js",
+    "from": "        other.values.get('leak')?.value === 1 ||",
+    "to": "        other.values.get('leak')?.value === 2 ||"
+  },
+  {
+    "name": "open: a sensor alert ignored",
+    "file": "src/app.js",
+    "from": "        (type === TYPES.ALERT && other.values.get('sens')?.value === 1)",
+    "to": "        (type === TYPES.ALERT && other.values.get('sens')?.value === 2)"
+  },
+  {
+    "name": "open: other hubs checked instead of this one",
+    "file": "src/app.js",
+    "from": "      if (other.hub !== job.hub || !other.heard) continue;",
+    "to": "      if (other.hub === job.hub || !other.heard) continue;"
+  },
+  {
+    "name": "open: already on still sent",
+    "file": "src/app.js",
+    "from": "    if (water === 1) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "confirmation: retained messages confirm",
+    "file": "src/app.js",
+    "from": "    if (!retained) {\n      for (const waiter",
+    "to": "    if (true) {\n      for (const waiter"
+  },
+  {
+    "name": "confirmation: any value confirms",
+    "file": "src/app.js",
+    "from": "          values.get(waiter.key) === waiter.expected",
+    "to": "          values.get(waiter.key) !== undefined"
+  },
+  {
+    "name": "send: published while not connected",
+    "file": "src/app.js",
+    "from": "    if (!this.mqttConnected || !client) {",
+    "to": "    if (!client) {"
+  },
+  {
+    "name": "send: a write error taken as sent",
+    "file": "src/app.js",
+    "from": "    if (written === 'error') {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "send: a hanging write taken as an error",
+    "file": "src/app.js",
+    "from": "resolve('timeout'), TIMINGS.publishWait",
+    "to": "resolve('error'), TIMINGS.publishWait"
+  },
+  {
+    "name": "session: values kept across a disconnection",
+    "file": "src/app.js",
+    "from": "      this.mqttConnected = false;\n      this.resetSession();\n      if (pending) {",
+    "to": "      this.mqttConnected = false;\n      if (pending) {"
+  },
+  {
+    "name": "refused: the mark not kept",
+    "file": "src/app.js",
+    "from": "    this.memory.refused = { salt, mark: credentialMark(this.config, salt) };",
+    "to": "    void salt;"
+  },
+  {
+    "name": "refused: the mark compared the wrong way",
+    "file": "src/app.js",
+    "from": "credentialMark(this.config, refused.salt) === refused.mark",
+    "to": "credentialMark(this.config, refused.salt) !== refused.mark"
+  },
+  {
+    "name": "unanswered: three times before counted as refused",
+    "file": "src/app.js",
+    "from": "this.unanswered >= 2",
+    "to": "this.unanswered >= 3"
+  },
+  {
+    "name": "flood: no message limit",
+    "file": "src/app.js",
+    "from": "    if (this.flood.count > LIMITS.messagesPerSecond) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "limits: devices unbounded",
+    "file": "src/app.js",
+    "from": "this.registry.size >= LIMITS.devices ||",
+    "to": "false ||"
+  },
+  {
+    "name": "states: published for devices not created",
+    "file": "src/app.js",
+    "from": "    if (!type || !this.createdDevice(entry)) {",
+    "to": "    if (!type) {"
+  },
+  {
+    "name": "deviceCreated: old values published as new",
+    "file": "src/app.js",
+    "from": "      this.publishStates(entry, new Set(entry.values.keys()), TIMINGS.freshFor);",
+    "to": "      this.publishStates(entry, new Set(entry.values.keys()));"
+  },
+  {
+    "name": "test button: no rate limit",
+    "file": "src/app.js",
+    "from": "    if (mono - this.lastTestAt < TIMINGS.testEvery) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "identity: a type changed on the hub ignored",
+    "file": "src/app.js",
+    "from": "    if (sessionType && createdType && sessionType !== createdType) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "getConfig: never tried again",
+    "file": "src/app.js",
+    "from": "        this.onConnected(getConfig).catch((e) => this.logger.error(`Start failed: ${e.message}`));",
+    "to": "        void getConfig;"
+  },
+  {
+    "name": "/data: an I/O error not read again",
+    "file": "src/app.js",
+    "from": "        this.readStore().catch(() => {});",
+    "to": "        void 0;"
+  },
+  {
+    "name": "devices: a command on a type without it",
+    "file": "src/devices.js",
+    "from": "  if (!TYPE_FEATURES[type]?.includes(key)) {",
+    "to": "  if (false) {"
+  },
+  {
+    "name": "drop: a hub announced at any number",
+    "file": "src/drop.js",
+    "from": "  if ((type === TYPES.HUB) !== (device === HUB_DEVICE)) {",
+    "to": "  if (false) {"
+  },
+  {
+    "name": "drop: a decimal accepted for an integer key",
+    "file": "src/drop.js",
+    "from": "  if (spec.integer && !Number.isInteger(n)) {",
+    "to": "  if (false) {"
+  },
+  {
+    "name": "drop: any number taken as a flag",
+    "file": "src/drop.js",
+    "from": "    return n === 0 || n === 1 ? n : undefined;",
+    "to": "    return n;"
+  },
+  {
+    "name": "drop: bounds not checked",
+    "file": "src/drop.js",
+    "from": "  if (n === undefined || n < spec.min || n > spec.max) {",
+    "to": "  if (n === undefined) {"
+  },
+  {
+    "name": "config: any truthy value allows",
+    "file": "src/config.js",
+    "from": "export const strictTrue = (value) => value === true || value === 'true';",
+    "to": "export const strictTrue = (value) => Boolean(value);"
+  },
+  {
+    "name": "config: a password alone accepted",
+    "file": "src/config.js",
+    "from": "  } else if (!problem && password !== '' && username === '') {",
+    "to": "  } else if (false) {"
+  },
+  {
+    "name": "mqtt: packets not bounded",
+    "file": "src/mqtt.js",
+    "from": "      if (length + this.header.length > this.max) {",
+    "to": "      if (false) {"
+  },
+  {
+    "name": "mqtt: the pinned fingerprint not compared",
+    "file": "src/mqtt.js",
+    "from": "      if (seen !== pinned) {",
+    "to": "      if (false) {"
+  },
+  {
+    "name": "mqtt: writes not held before verification",
+    "file": "src/mqtt.js",
+    "from": "      if (open) {\n        socket.write(chunk, callback);",
+    "to": "      if (true) {\n        socket.write(chunk, callback);"
+  },
+  {
+    "name": "mqtt: maximumPacketSize not asked",
+    "file": "src/mqtt.js",
+    "from": "    ...(protocolVersion === 5 ? { properties: { maximumPacketSize: MAX_PACKET } } : {}),",
+    "to": "    ...{},"
+  },
+  {
+    "name": "store: an invalid salt accepted",
+    "file": "src/store.js",
+    "from": "    /^[0-9a-f]{32}$/.test(refused.salt) &&",
+    "to": "    true &&"
+  },
+  {
+    "name": "enqueue: a command that left answered \"Nothing sent\" at 3.5 s",
+    "file": "src/app.js",
+    "from": "() => job.sent || resolve({ ok: false, text: C.late(job.name) }),",
+    "to": "() => resolve({ ok: false, text: C.late(job.name) }),"
+  },
+  {
+    "name": "closing: an older shutoff ends the watch of a newer one",
+    "file": "src/app.js",
+    "from": "    if (this.closing.get(job.pid)?.job === job) {",
+    "to": "    if (true) {"
+  },
+  {
+    "name": "start: a stale start connects after a newer one",
+    "file": "src/app.js",
+    "from": "      if (generation !== this.generation || this.closed) {\n        // Started again meanwhile",
+    "to": "      if (false) {\n        // Started again meanwhile"
+  }
+]

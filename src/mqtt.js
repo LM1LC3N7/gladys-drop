@@ -1,0 +1,262 @@
+// -----------------------------------------------------------------------------
+// The MQTT connection to the broker of the user (Mosquitto...), where the
+// DROP Hub publishes: the only network access of the integration. Taken from
+// gladys-qbus (src/mqtt.js), with a pinned certificate added.
+//
+// mqtt.js over a TCP or TLS socket built here, for three reasons:
+//   - every packet the broker sends is bounded BEFORE it is buffered: the
+//     fixed header announces its length, and a packet over MAX_PACKET cuts
+//     the connection at once (a retained message of 100 MB would otherwise
+//     be read in full, again on every connection);
+//   - MQTT 5 with `maximumPacketSize`: a broker that honours it (Mosquitto
+//     does) drops such a message instead of sending it. A broker without
+//     MQTT 5 is used in 3.1.1 (src/app.js says so); the guard still applies;
+//   - nothing the client writes (the CONNECT, so the password) leaves before
+//     the transport is verified: TCP connected, or TLS connected AND its
+//     certificate accepted, by the system authorities or by the SHA-256
+//     fingerprint the user pinned (a self-signed broker). Nothing is read
+//     before either.
+// Nothing is ever queued while offline (queueQoSZero: false): a command
+// either leaves now or is refused, never minutes later.
+// -----------------------------------------------------------------------------
+
+import { randomBytes } from 'node:crypto';
+import net, { isIP } from 'node:net';
+import { Duplex, Transform } from 'node:stream';
+import tls from 'node:tls';
+import { MqttClient } from 'mqtt';
+import { LIMITS, TIMINGS } from './constants.js';
+
+export const MAX_PACKET = LIMITS.packetBytes;
+
+/** MQTT 3.1.1 / 5 CONNACK refusals worth a precise message. */
+export const REFUSALS = {
+  1: 'unacceptable protocol version',
+  2: 'identifier rejected',
+  3: 'server unavailable',
+  4: 'bad user name or password',
+  5: 'not authorized',
+  128: 'unspecified error',
+  132: 'unsupported protocol version',
+  133: 'client identifier not valid',
+  134: 'bad user name or password',
+  135: 'not authorized',
+  136: 'server unavailable',
+  137: 'server busy',
+  138: 'banned',
+};
+
+/**
+ * Cuts the stream as soon as a packet header announces more than `max`
+ * bytes (or is malformed): the rest is never buffered. Packets are tracked
+ * across chunks (header bytes, then the body skipped).
+ */
+export class PacketGuard extends Transform {
+  constructor(max = MAX_PACKET) {
+    super();
+    this.max = max;
+    this.skip = 0;
+    this.header = [];
+  }
+
+  _transform(chunk, _encoding, callback) {
+    let i = 0;
+    // Where the packet being refused starts in this chunk: the packets before
+    // it (a CONNACK in the same chunk...) are still delivered before the cut.
+    let start = 0;
+    const cut = (message) => {
+      if (start > 0) {
+        this.push(chunk.subarray(0, start));
+      }
+      callback(guardError(message));
+    };
+    while (i < chunk.length) {
+      if (this.skip > 0) {
+        const n = Math.min(this.skip, chunk.length - i);
+        this.skip -= n;
+        i += n;
+        continue;
+      }
+      if (this.header.length === 0) {
+        start = i;
+      }
+      this.header.push(chunk[i]);
+      i += 1;
+      if (this.header.length === 1) {
+        continue;
+      }
+      const last = this.header[this.header.length - 1];
+      if (last & 0x80) {
+        if (this.header.length >= 5) {
+          return cut('malformed packet length');
+        }
+        continue;
+      }
+      let length = 0;
+      let factor = 1;
+      for (let k = 1; k < this.header.length; k += 1) {
+        length += (this.header[k] & 0x7f) * factor;
+        factor *= 128;
+      }
+      if (length + this.header.length > this.max) {
+        return cut(`a message over ${Math.round(this.max / 1024)} KB`);
+      }
+      this.skip = length;
+      this.header = [];
+    }
+    return callback(null, chunk);
+  }
+}
+
+function guardError(message, code = 'PACKET_TOO_LARGE') {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
+
+/** The SHA-256 fingerprint of the certificate the peer presented ("AB:CD:..."), or undefined. */
+export function peerFingerprint(socket) {
+  const cert = socket.getPeerCertificate?.();
+  return typeof cert?.fingerprint256 === 'string' ? cert.fingerprint256.toUpperCase() : undefined;
+}
+
+/**
+ * The socket to the broker, its incoming side behind the guard, its outgoing
+ * side held until the transport is verified. `onOpen` is called once
+ * verified (only then may the credentials leave); `onCertificate(seen)` when
+ * a pinned fingerprint does not match (the connection is cut).
+ */
+export function guardedStream(config, { onOpen, onCertificate } = {}) {
+  const options = { host: config.host, port: config.port };
+  const pinned = config.tls ? config.fingerprint : undefined;
+  const socket = config.tls
+    ? tls.connect({
+        ...options,
+        // A pinned fingerprint replaces the authorities (a self-signed
+        // broker): checked below before anything is written or read.
+        rejectUnauthorized: !pinned,
+        ...(isIP(config.host) === 0 ? { servername: config.host } : {}),
+      })
+    : net.connect(options);
+  let open = false;
+  const held = [];
+  const guard = new PacketGuard();
+  const stream = new Duplex({
+    read() {
+      if (open) {
+        guard.resume();
+      }
+    },
+    write(chunk, _encoding, callback) {
+      if (open) {
+        socket.write(chunk, callback);
+      } else {
+        held.push([chunk, callback]);
+      }
+    },
+    final(callback) {
+      socket.end();
+      callback();
+    },
+    destroy(err, callback) {
+      socket.destroy();
+      guard.destroy();
+      for (const [, cb] of held.splice(0)) {
+        cb(err ?? new Error('closed'));
+      }
+      callback(err);
+    },
+  });
+  socket.once(config.tls ? 'secureConnect' : 'connect', () => {
+    if (pinned) {
+      const seen = peerFingerprint(socket);
+      if (seen !== pinned) {
+        onCertificate?.(seen);
+        stream.destroy(guardError('certificate fingerprint mismatch', 'CERT_MISMATCH'));
+        return;
+      }
+    }
+    open = true;
+    socket.pipe(guard);
+    onOpen?.();
+    for (const [chunk, callback] of held.splice(0)) {
+      socket.write(chunk, callback);
+    }
+  });
+  guard.on('data', (chunk) => {
+    if (!stream.push(chunk)) {
+      guard.pause();
+    }
+  });
+  guard.on('end', () => stream.push(null));
+  guard.on('error', (err) => stream.destroy(err));
+  socket.on('error', (err) => stream.destroy(err));
+  socket.on('close', () => stream.destroy());
+  return stream;
+}
+
+export function connectBroker(
+  config,
+  {
+    protocolVersion = 5,
+    reconnectPeriod = TIMINGS.reconnectPeriod,
+    connectTimeout = TIMINGS.connectTimeout,
+    onAttempt,
+    onOpen,
+    onCertificate,
+    streamBuilder = () => {
+      onAttempt?.();
+      return guardedStream(config, { onOpen, onCertificate });
+    },
+  } = {},
+) {
+  return new MqttClient(streamBuilder, {
+    username: config.username || undefined,
+    password: config.password || undefined,
+    // A random client id: two instances (a test and a restart) never kick each other out.
+    clientId: `gladys_drop_${randomBytes(4).toString('hex')}`,
+    clean: true,
+    keepalive: 60,
+    connectTimeout,
+    reconnectPeriod,
+    // A CONNACK refusal (protocol, identifier, server unavailable) is tried
+    // again like an unreachable broker; the credentials (4, 5, 134, 135, 138)
+    // end the client in src/app.js; the protocol version (1, 132) makes
+    // src/app.js fall back to 3.1.1.
+    reconnectOnConnackError: true,
+    protocolVersion,
+    ...(protocolVersion === 5 ? { properties: { maximumPacketSize: MAX_PACKET } } : {}),
+    resubscribe: false,
+    queueQoSZero: false,
+  });
+}
+
+/** A readable reason for a connection error (never the password). */
+export function errorReason(err) {
+  if (!err) {
+    return 'unknown error';
+  }
+  if (err.code !== undefined && REFUSALS[err.code]) {
+    return REFUSALS[err.code];
+  }
+  if (err.code === 'PACKET_TOO_LARGE') {
+    return `the broker sent ${err.message}: connection cut`;
+  }
+  if (err.code === 'CERT_MISMATCH') {
+    return 'the certificate of the broker is not the pinned one';
+  }
+  if (typeof err.code === 'string' && /^[A-Z0-9_]{1,40}$/.test(err.code)) {
+    return err.code;
+  }
+  return String(err.message ?? err)
+    .replace(/\/\/[^@/\s]*@/g, '//')
+    .replace(/[^\x20-\x7e]/g, ' ')
+    .slice(0, 120);
+}
+
+/** The broker refused the credentials (or the client is not allowed). */
+export const isRefusal = (err) =>
+  err?.code !== undefined && [4, 5, 134, 135, 138].includes(err.code);
+
+/** The broker does not speak MQTT 5 (3.1.1 brokers answer 1, MQTT 5 ones 132). */
+export const isProtocolRefusal = (err) => err?.code === 1 || err?.code === 132;

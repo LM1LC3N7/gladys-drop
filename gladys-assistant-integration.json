@@ -1,177 +1,209 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "DROP (Chandler Systems)",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "DROP water management over local MQTT: shutoff valve, leaks, softener, flow.",
+    "fr": "Gestion de l'eau DROP par MQTT local : vanne, fuites, adoucisseur, débit."
   },
-  "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
-  "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "version": "0.1.0",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-drop:0.1.0",
+  "gladys_version": ">=5.3.0",
+  "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-drop/main/cover.png",
+  "categories": ["security", "energy"],
+  "countries": ["US"],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": {
+        "en": "Your DROP Hub",
+        "fr": "Votre hub DROP"
+      },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "Shows your DROP devices (Chandler Systems) in Gladys through your own MQTT broker, without the DROP cloud: hub, protection valve, leak detectors, softener, filters, salt, pump controller, reverse osmosis; flow, pressure, water used. In the DROP Connect app, set the hub to publish to your broker (Mosquitto...), enter the broker below, save, then add the devices from the Discovery tab. Shutting the water off, turning it on, the bypass and the protect mode stay off until you allow each below. Anyone who can publish on your broker can command the valve: protect it with a password. Never tested with a real device. Not affiliated with Chandler Systems.",
+        "fr": "Affiche vos appareils DROP (Chandler Systems) dans Gladys par votre propre broker MQTT, sans le cloud DROP : hub, vanne de protection, détecteurs de fuite, adoucisseur, filtres, sel, contrôleur de pompe, osmoseur ; débit, pression, eau consommée. Dans l'application DROP Connect, faites publier le hub vers votre broker (Mosquitto...), saisissez le broker ci-dessous, enregistrez, puis ajoutez les appareils depuis l'onglet Découverte. Couper l'eau, l'ouvrir, le bypass et le mode de protection restent désactivés tant que vous ne les autorisez pas ci-dessous. Toute personne qui peut publier sur votre broker peut commander la vanne : protégez-le par un mot de passe. Jamais testé avec un vrai appareil. Sans lien avec Chandler Systems."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://github.com/LM1LC3N7/gladys-drop/blob/main/docs/fr.md",
+          "label": {
+            "en": "Guide (French)",
+            "fr": "Guide (français)"
+          }
+        },
+        {
+          "url": "https://github.com/LM1LC3N7/gladys-drop/blob/main/docs/en.md",
+          "label": {
+            "en": "Guide (English)",
+            "fr": "Guide (anglais)"
+          }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
-      "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
+      "key": "broker_url",
+      "type": "string",
+      "label": {
+        "en": "MQTT broker address",
+        "fr": "Adresse du broker MQTT"
       },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
+      "description": {
+        "en": "The broker the DROP Hub publishes to: its IP address or host name (port 1883), or mqtts://address:8883 in TLS.",
+        "fr": "Le broker où publie le hub DROP : son adresse IP ou son nom (port 1883), ou mqtts://adresse:8883 en TLS."
+      },
+      "placeholder": {
+        "en": "192.168.1.20",
+        "fr": "192.168.1.20"
+      },
       "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
+      "default": ""
     },
     {
-      "key": "longitude",
-      "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
-      "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
+      "key": "username",
+      "type": "string",
+      "label": {
+        "en": "User name",
+        "fr": "Utilisateur"
       },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
-      "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
+      "description": {
+        "en": "The user of the broker, if it asks for one.",
+        "fr": "L'utilisateur du broker, s'il en demande un."
+      },
+      "required": false,
+      "default": ""
     },
     {
-      "key": "unit",
+      "key": "password",
+      "type": "secret",
+      "label": {
+        "en": "Password",
+        "fr": "Mot de passe"
+      },
+      "description": {
+        "en": "The password of the broker: kept by Gladys in its database, never shown again, sent only to your broker. A password needs a user name.",
+        "fr": "Le mot de passe du broker : gardé par Gladys dans sa base, jamais réaffiché, envoyé seulement à votre broker. Un mot de passe demande un utilisateur."
+      },
+      "required": false
+    },
+    {
+      "key": "broker_fingerprint",
+      "type": "string",
+      "label": {
+        "en": "Certificate fingerprint (mqtts, optional)",
+        "fr": "Empreinte du certificat (mqtts, facultatif)"
+      },
+      "description": {
+        "en": "Only for a broker in TLS with a self-signed certificate: its SHA-256 fingerprint (64 hexadecimal digits, colons allowed). The connection is then accepted for this certificate only; another one stops it and the status shows the fingerprint seen. Empty: the certificate must be signed by a known authority.",
+        "fr": "Seulement pour un broker en TLS au certificat auto-signé : son empreinte SHA-256 (64 caractères hexadécimaux, deux-points permis). La connexion n'est alors acceptée que pour ce certificat ; un autre l'arrête et le statut affiche l'empreinte vue. Vide : le certificat doit être signé par une autorité connue."
+      },
+      "placeholder": {
+        "en": "AB:CD:...",
+        "fr": "AB:CD:..."
+      },
+      "required": false,
+      "default": ""
+    },
+    {
+      "key": "allow_water_close",
+      "type": "boolean",
+      "label": {
+        "en": "Allow shutting the water off",
+        "fr": "Autoriser la coupure de l'eau"
+      },
+      "description": {
+        "en": "Off by default. On: the \"Shut the water off\" button of the hub and of the protection valves closes the valve. Off: it refuses every command.",
+        "fr": "Désactivé par défaut. Activé : le bouton « Couper l'eau » du hub et des vannes de protection ferme la vanne. Désactivé : il refuse toute commande."
+      },
+      "required": false,
+      "default": false
+    },
+    {
+      "key": "allow_water_open",
+      "type": "boolean",
+      "label": {
+        "en": "Allow turning the water on",
+        "fr": "Autoriser l'ouverture de l'eau"
+      },
+      "description": {
+        "en": "Off by default. On: the \"Turn the water on\" button opens the valve, only when the device has said in this connection that its valve is closed and that it has no leak, no device of the same hub reports a leak, and no shutoff is under way. Off: it refuses every command.",
+        "fr": "Désactivé par défaut. Activé : le bouton « Ouvrir l'eau » ouvre la vanne, seulement si l'appareil a dit dans cette connexion que sa vanne est fermée et qu'il n'a pas de fuite, qu'aucun appareil du même hub ne signale de fuite et qu'aucune coupure n'est en cours. Désactivé : il refuse toute commande."
+      },
+      "required": false,
+      "default": false
+    },
+    {
+      "key": "allow_bypass",
+      "type": "boolean",
+      "label": {
+        "en": "Allow changing the bypass",
+        "fr": "Autoriser le changement du bypass"
+      },
+      "description": {
+        "en": "Off by default. On: the Bypass list of the hub, softener and filter can be changed (bypass on: the water goes around the treatment). Off: refused.",
+        "fr": "Désactivé par défaut. Activé : la liste Bypass du hub, de l'adoucisseur et du filtre peut être changée (bypass activé : l'eau contourne le traitement). Désactivé : refusé."
+      },
+      "required": false,
+      "default": false
+    },
+    {
+      "key": "allow_mode_change",
+      "type": "boolean",
+      "label": {
+        "en": "Allow changing the protect mode",
+        "fr": "Autoriser le changement du mode de protection"
+      },
+      "description": {
+        "en": "Off by default. On: the protect mode of the hub (Home, Away, Schedule) can be changed from Gladys; Away is the strictest. Off: refused.",
+        "fr": "Désactivé par défaut. Activé : le mode de protection du hub (Maison, Absent, Programmé) peut être changé depuis Gladys ; Absent est le plus strict. Désactivé : refusé."
+      },
+      "required": false,
+      "default": false
+    },
+    {
+      "key": "language",
       "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
-      "required": false,
-      "default": "celsius",
-      "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
-      ]
-    },
-    {
-      "key": "poll_frequency",
-      "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
+      "label": {
+        "en": "Language of the feature names",
+        "fr": "Langue des noms des fonctionnalités"
+      },
       "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
+        "en": "The language of the names given to the devices and their features.",
+        "fr": "La langue des noms donnés aux appareils et à leurs fonctionnalités."
       },
       "required": false,
-      "default": 300,
-      "min": 60,
-      "max": 3600
+      "default": "fr",
+      "options": [
+        {
+          "value": "fr",
+          "label": {
+            "en": "French",
+            "fr": "Français"
+          }
+        },
+        {
+          "value": "en",
+          "label": {
+            "en": "English",
+            "fr": "Anglais"
+          }
+        }
+      ]
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
+      "key": "test_connection",
+      "label": {
+        "en": "Test the connection",
+        "fr": "Tester la connexion"
+      },
+      "description": {
+        "en": "Connects to the broker again (at most every 10 s), also after a refusal or a certificate stop; the status above shows the result.",
+        "fr": "Se reconnecte au broker (au plus toutes les 10 s), aussi après un refus ou un arrêt sur le certificat ; le statut ci-dessus donne le résultat."
+      },
       "timeout_seconds": 30
-    },
-    {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ]
-    }
-  ],
-  "scene_triggers": [
-    {
-      "key": "motion_detected",
-      "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
-      "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
-      },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
-        },
-        {
-          "key": "target",
-          "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
-          "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
-          ]
-        }
-      ],
-      "variables": [
-        {
-          "key": "target",
-          "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
-        }
-      ]
-    }
-  ],
-  "scene_actions": [
-    {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
-      },
-      "timeout_seconds": 15,
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ],
-      "outputs": [
-        {
-          "key": "signalled",
-          "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
-        }
-      ]
-    }
-  ],
-  "widgets": [
-    {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
-      "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
-      },
-      "icon": "activity",
-      "action_timeout_seconds": 15
     }
   ]
 }

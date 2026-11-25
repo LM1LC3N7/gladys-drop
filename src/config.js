@@ -1,45 +1,144 @@
 // -----------------------------------------------------------------------------
-// Integration configuration.
-//
-// The configuration is filled in by the user in Gladys, from the `config_schema`
-// declared in `gladys-assistant-integration.json`. The SDK fetches it for you
-// (`gladys.getConfig()`) and notifies you of every change through
-// `gladys.onConfigUpdated()`.
-//
-// This module only provides defaults and normalizes the received object, so the
-// rest of the code never has to deal with `undefined`.
+// The configuration: the manifest `config_schema` values, normalized so the
+// rest of the code never deals with strings typed in a form. The password of
+// the broker is kept here and in the MQTT client only: never logged, never in
+// /data, never in a status or an error.
 // -----------------------------------------------------------------------------
 
-// Defaults: they MUST stay consistent with the `default` values declared in the
-// `config_schema` of the manifest.
+/** Defaults, mirrored by the manifest (checked by test/manifest.test.js). */
 export const DEFAULT_CONFIG = {
-  latitude: 48.8566, // Paris
-  longitude: 2.3522,
-  unit: 'celsius', // 'celsius' | 'fahrenheit'
-  // Seconds between two reads of the polled sensors. Gladys polls at most once
-  // a minute: slower intervals are applied by skipping polls (see
-  // createPoller in src/devices/index.js).
-  poll_frequency: 300,
-  // Reserved key (NOT in config_schema): because the manifest declares both
-  // 'local' and 'cloud' in its `transports` field, Gladys shows a standard
-  // "Prefer the local connection" toggle and sends the user's choice here.
-  // Read-only for the integration; defaults to true.
-  GLADYS_PREFER_LOCAL: true,
+  broker_url: '',
+  username: '',
+  password: '',
+  broker_fingerprint: '',
+  // Louis's rule: the water is never shut off nor let in until the user allows it.
+  allow_water_close: false,
+  allow_water_open: false,
+  allow_bypass: false,
+  allow_mode_change: false,
+  language: 'fr',
 };
 
+/** The keys without a default in the manifest (a secret never has one). */
+export const NO_MANIFEST_DEFAULT = ['password'];
+
+/** TCP or TLS only (the size guard of src/mqtt.js reads the raw MQTT stream). */
+const SCHEMES = { 'mqtt:': false, 'tcp:': false, 'mqtts:': true, 'ssl:': true };
+
+/** Only `true` (or the text "true") allows: anything else, missing included, refuses. */
+export const strictTrue = (value) => value === true || value === 'true';
+
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u001f\u007f]/;
+
 /**
- * Merge the user config with the defaults.
- * @param {Record<string, unknown>} raw config returned by the SDK
+ * The broker URL, completed: "192.168.1.10" -> "mqtt://192.168.1.10".
+ * @returns {{ url: string, host: string, port: number, tls: boolean } | { error: string }}
  */
-export function normalizeConfig(raw = {}) {
+export function parseBrokerUrl(raw) {
+  const text = typeof raw === 'string' ? raw.trim() : '';
+  if (text === '') {
+    return { error: 'empty' };
+  }
+  if (text.length > 300 || CONTROL.test(text)) {
+    return { error: 'invalid' };
+  }
+  const withScheme = /^[a-z]+:\/\//i.test(text) ? text : `mqtt://${text}`;
+  let url;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    return { error: 'invalid' };
+  }
+  if (!Object.hasOwn(SCHEMES, url.protocol) || !url.hostname) {
+    return { error: 'invalid' };
+  }
+  if (url.username || url.password) {
+    // Credentials belong to their own fields (the secret one is never shown again).
+    return { error: 'credentials' };
+  }
+  if ((url.pathname && url.pathname !== '/') || url.search || url.hash) {
+    return { error: 'invalid' };
+  }
+  const host = url.hostname.replace(/^\[(.*)\]$/, '$1');
+  if (host === '0.0.0.0' || host === '::' || /^(22[4-9]|23\d|255)\./.test(host)) {
+    // Never a broadcast, multicast nor "any" address.
+    return { error: 'invalid' };
+  }
+  const secure = SCHEMES[url.protocol];
   return {
-    ...DEFAULT_CONFIG,
-    ...raw,
-    // Force the types: config may arrive as strings from a form.
-    latitude: Number(raw.latitude ?? DEFAULT_CONFIG.latitude),
-    longitude: Number(raw.longitude ?? DEFAULT_CONFIG.longitude),
-    poll_frequency: Number(raw.poll_frequency ?? DEFAULT_CONFIG.poll_frequency),
-    // The preference is a boolean; anything but an explicit false means true.
-    GLADYS_PREFER_LOCAL: raw.GLADYS_PREFER_LOCAL !== false,
+    /** scheme://host[:port]: nothing else, so it may be logged. */
+    url: `${secure ? 'mqtts' : 'mqtt'}://${url.host}`,
+    host,
+    port: url.port ? Number(url.port) : secure ? 8883 : 1883,
+    tls: secure,
   };
 }
+
+/**
+ * A SHA-256 fingerprint typed by the user ("AB:CD:..." or 64 hex digits, any
+ * case, spaces allowed): normalized as Node prints it (upper case, colons).
+ * @returns {{ fingerprint: string | undefined } | { error: string }}
+ */
+export function parseFingerprint(raw) {
+  const text = typeof raw === 'string' ? raw.replace(/[\s:]/g, '').toUpperCase() : '';
+  if (text === '') {
+    return { fingerprint: undefined };
+  }
+  if (!/^[0-9A-F]{64}$/.test(text)) {
+    return { error: 'fingerprint' };
+  }
+  return { fingerprint: text.match(/../g).join(':') };
+}
+
+export function normalizeConfig(raw = {}) {
+  const c = { ...DEFAULT_CONFIG };
+  for (const [key, value] of Object.entries(raw ?? {})) {
+    if (Object.hasOwn(c, key) && value !== null && value !== undefined) {
+      c[key] = value;
+    }
+  }
+  const broker = parseBrokerUrl(c.broker_url);
+  const pin = parseFingerprint(c.broker_fingerprint);
+  const username = typeof c.username === 'string' ? c.username.trim() : '';
+  const password = typeof c.password === 'string' ? c.password : '';
+  let problem = broker.error ? `broker:${broker.error}` : undefined;
+  if (!problem && (username.length > 256 || CONTROL.test(username))) {
+    problem = 'username';
+  } else if (!problem && (password.length > 1024 || CONTROL.test(password))) {
+    problem = 'password';
+  } else if (!problem && password !== '' && username === '') {
+    // A password without a user name is a mistake (a broker never takes one alone).
+    problem = 'password-alone';
+  } else if (!problem && pin.error) {
+    problem = 'fingerprint';
+  } else if (!problem && pin.fingerprint && !broker.tls) {
+    problem = 'fingerprint-plain';
+  }
+  return {
+    /** Why the configuration cannot be used (shown in the status), else undefined. */
+    problem,
+    brokerUrl: broker.url,
+    host: broker.host,
+    port: broker.port,
+    tls: broker.tls,
+    username: problem ? '' : username,
+    password: problem ? '' : password,
+    fingerprint: pin.fingerprint,
+    allowWaterClose: strictTrue(c.allow_water_close),
+    allowWaterOpen: strictTrue(c.allow_water_open),
+    allowBypass: strictTrue(c.allow_bypass),
+    allowModeChange: strictTrue(c.allow_mode_change),
+    language: c.language === 'en' ? 'en' : 'fr',
+  };
+}
+
+/** What a reconnection to the broker depends on (compared in memory only, never stored). */
+export const connectionKey = (config) =>
+  JSON.stringify([
+    config.problem ?? null,
+    config.brokerUrl ?? null,
+    config.username,
+    config.password,
+    config.fingerprint ?? null,
+  ]);
