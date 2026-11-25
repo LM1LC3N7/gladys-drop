@@ -188,3 +188,7 @@ life-remaining` (core 4.86+).
 - Whether `battery: 0` on a mains-powered device means "no battery".
 - The temperature unit of the leak detectors (°F per Home Assistant).
 - The meaning of the hub's `bypass`, and the protect modes it accepts.
+
+## Next patch
+
+- Review minors: see `_lots/lot25/reviews/drop-r5.md`.
