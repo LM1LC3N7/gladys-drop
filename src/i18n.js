@@ -147,8 +147,8 @@ export const T = {
     ),
   stopsKept: (n, held) =>
     both(
-      ` ${n} shutoff(s) kept until the valve shows the water off${held ? `, ${held} held (sent again every 10 min)` : ''}.`,
-      ` ${n} coupure(s) gardée(s) jusqu’à ce que la vanne montre l’eau coupée${held ? `, ${held} retenue(s) (renvoyée(s) toutes les 10 min)` : ''}.`,
+      ` ${n} shutoff(s) kept until the valve shows the water off${held ? `, ${held} held (sent again every 10 min)` : ''}; given up 24 h after the click, or when the device is deleted in Gladys.`,
+      ` ${n} coupure(s) gardée(s) jusqu’à ce que la vanne montre l’eau coupée${held ? `, ${held} retenue(s) (renvoyée(s) toutes les 10 min)` : ''} ; abandonnée(s) 24 h après le clic, ou à la suppression de l’appareil dans Gladys.`,
     ),
   lastCommand: (text) => both(` Last command: ${text.en}`, ` Dernière commande : ${text.fr}`),
 };

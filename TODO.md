@@ -110,6 +110,22 @@ life-remaining` (core 4.86+).
   Node 22/24: net and TLS sockets already buffer what is written before the
   connection or the handshake, and the pinned check runs first in
   `secureConnect`. Kept as defence in depth (a CONNECT carries the password).
+- **Review r2 (2026-11-25)**: I2: a shutoff is let go by a `water:0` seen
+  after its send, retained included (the hub's last word at a reconnection);
+  when the valve was known closed as it left, a later live `water:1` is a
+  turn-on made elsewhere (DROP app): let go, never fought; a shutoff never
+  seen applied is given up when its device is deleted in Gladys, or 24 h
+  after its click (default kept by the coordinator, said in the status and
+  the docs). I3: a `leak:1` or `sens:1` of any device of the hub refuses a
+  turn-on whatever its type; `LEAK_KEY` only decides what must be known.
+  m1': dropped messages reset every value to unknown. m2: only a turn-on
+  whose write the broker took (`ok`) lets shutoffs go. m3: tests for a
+  message of another device (never a confirmation), the 2-minute rule of the
+  publisher, and a bounded wait in the option test. Mutants: 69, all killed
+  but #33 (writes held before verification, equivalent under Node, kept);
+  the stop and confirmation ones run again after the last change; suite
+  passed 20 times in `node:22-alpine` (a flaky brute-force count fixed with
+  a constant salt).
 - **Real broker**: a scenario against Mosquitto 2 in Docker (password file, a
   simulated hub publishing retained discovery and data, following the
   commands): connected, states, Discovery, shutoff and turn-on confirmed in

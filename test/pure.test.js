@@ -344,7 +344,9 @@ test('/data: the mark is 8 bits, salted; unreadable is never empty', async (t) =
   const dir = await mkdtemp(join(tmpdir(), 'drop-store-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const config = { brokerUrl: 'mqtt://h', username: 'u', password: 'secret' };
-  const salt = newSalt();
+  // A fixed salt: the count below is then exact, never a matter of luck.
+  assert.match(newSalt(), /^[0-9a-f]{32}$/);
+  const salt = '0123456789abcdef0123456789abcdef';
   const mark = credentialMark(config, salt);
   assert.ok(Number.isInteger(mark) && mark >= 0 && mark <= 255);
   assert.equal(credentialMark(config, salt), mark);

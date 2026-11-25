@@ -56,8 +56,9 @@ l'appareil. Elle ne lit rien avant de partir et ne passe pas derrière les autre
 elle part tout de suite et annule celles du même hub qui attendent encore leur tour (rien de
 cliqué avant une coupure ne part après elle). Elle part même si la vanne semble déjà fermée.
 
-Elle est **gardée** (en mémoire et dans `/data`) jusqu'à ce qu'un message de l'appareil
-reçu en direct montre l'eau coupée, ou qu'une ouverture de ce hub parte après elle :
+Elle est **gardée** (en mémoire et dans `/data`) jusqu'à ce que l'appareil montre l'eau
+coupée après l'envoi (message en direct, ou message retenu reçu à la reconnexion), ou
+qu'une ouverture de ce hub parte de Gladys après elle (écriture acceptée par le broker) :
 
 - cliquée sans connexion au broker : réponse « coupure gardée », envoi juste après la
   connexion suivante, sans attendre de message du hub ;
@@ -65,7 +66,12 @@ reçu en direct montre l'eau coupée, ou qu'une ouverture de ce hub parte après
 - renvoyée si l'appareil montre encore l'eau ouverte au moins 2 s après l'envoi, et 20 s
   après chaque envoi sans confirmation : 3 fois, puis toutes les 10 min (« retenue »,
   dit dans le statut), jusqu'à confirmation ;
-- une écriture de `/data` qui échoue ne la retarde jamais.
+- une écriture de `/data` qui échoue ne la retarde jamais ;
+- si la vanne était connue fermée quand la coupure est partie, une ouverture vue ensuite
+  (faite dans l'application DROP, par exemple) la lève : elle n'est jamais renvoyée contre
+  cette ouverture ;
+- jamais confirmée : elle est abandonnée 24 h après le clic, ou dès que vous supprimez
+  l'appareil dans Gladys (le statut le dit).
 
 Elle n'est pas envoyée seulement si l'identité ne va pas : une valeur autre que l'appui du
 bouton, ou un appareil dont le hub annonce maintenant un autre type (relancez une
@@ -90,10 +96,14 @@ déconnexion, tout redevient inconnu jusqu'aux messages suivants) :
 - son état de fuite est connu et sans fuite ;
 - chaque appareil du même hub qui peut signaler une fuite (hub, vanne, détecteurs, pompe,
   osmoseur, alerte), annoncé par le hub ou créé dans Gladys, a un état connu, sans fuite
-  ni alerte. Un détecteur retiré ou hors service bloque l'ouverture : supprimez-le dans
-  Gladys ;
+  ni alerte. Une fuite signalée par n'importe quel appareil du hub, même d'un type que
+  l'intégration ne connaît pas, refuse aussi. Un détecteur retiré ou hors service bloque
+  l'ouverture : supprimez-le dans Gladys et retirez-le du hub (tant que le hub l'annonce,
+  il compte). Après une reconnexion, un détecteur qui ne publie que sur changement bloque
+  l'ouverture jusqu'à son prochain message (à vérifier sur un vrai hub) ;
 - aucun message du broker n'a été ignoré (plus de 200 par seconde) dans les 2 dernières
-  secondes ;
+  secondes ; après des messages ignorés, chaque valeur redevient inconnue jusqu'au message
+  suivant de son appareil ;
 - aucune coupure de ce hub n'est partie depuis moins de 20 s, et aucune n'a été cliquée
   depuis ce clic.
 

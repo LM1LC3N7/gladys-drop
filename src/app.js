@@ -604,6 +604,10 @@ export class DropApp {
     }
     this.flood.count += 1;
     if (this.flood.count > LIMITS.messagesPerSecond) {
+      if (this.flood.lastDrop !== second) {
+        // A dropped message may have been a leak: every value is unknown until the next one.
+        for (const entry of this.registry.values()) entry.values.clear();
+      }
       this.flood.lastDrop = second;
       if (!this.flood.dropped) {
         this.flood.dropped = true;
@@ -698,11 +702,18 @@ export class DropApp {
       }
     }
     const stop = this.stops.get(entry.pid);
-    if (stop && !retained && values.has('water')) {
-      if (values.get('water') === 0) {
+    if (stop && values.has('water')) {
+      const water = values.get('water');
+      if (water === 0) {
+        // Seen closed (a retained message, which the broker sends only after the
+        // SUBACK, so after the shutoff left, is the hub's last word).
         this.liftStop(stop, 'confirmed');
+      } else if (water === 1 && !retained && stop.closedSeen) {
+        // Known closed when it left: this is a turn-on made elsewhere (the DROP app), never fought.
+        this.liftStop(stop, 'let go: the water was turned on elsewhere after it');
       } else if (
-        values.get('water') === 1 &&
+        water === 1 &&
+        !retained &&
         stop.sends > 0 &&
         !stop.held &&
         mono - stop.lastSent >= TIMINGS.stopApplyDelay
@@ -815,6 +826,10 @@ export class DropApp {
     if (typeof device?.external_id === 'string') {
       this.publisher.forget(device.external_id);
     }
+    // Deleting the device gives up its shutoff (a device gone from the hub never confirms).
+    const parsed = parseExternalId(device?.external_id);
+    const stop = parsed && this.stops.get(platformId(parsed.hub, parsed.device));
+    if (stop) this.liftStop(stop, 'given up: the device was deleted in Gladys');
   }
 
   // --- Commands ----------------------------------------------------------------
@@ -892,6 +907,7 @@ export class DropApp {
       at: this.now(),
       budget: TIMINGS.stopResends,
       held: false,
+      closedSeen: false,
       seq,
     });
     // Never awaited: a slow or failing /data never holds the shutoff back.
@@ -967,6 +983,13 @@ export class DropApp {
     if (!this.mqttConnected || !client) {
       return Promise.resolve('offline');
     }
+    if (this.now() - stop.at > TIMINGS.stopExpiry) {
+      this.liftStop(stop, 'given up: not seen applied in 24 h');
+      return Promise.resolve('expired');
+    }
+    // Known closed when it leaves: a later live "water on" is a turn-on made elsewhere.
+    const entry = this.registry.get(stop.pid);
+    if (entry?.heard && entry.values.get('water')?.value === 0) stop.closedSeen = true;
     stop.sends += 1;
     stop.lastSent = this.monotonic();
     this.armStopCheck(stop);
@@ -1100,18 +1123,28 @@ export class DropApp {
     const seen = new Set();
     for (const other of this.registry.values()) {
       if (other.hub !== job.hub) continue;
-      const type = this.typeOf(other);
-      const key = LEAK_KEY[type];
-      if (!key) continue;
       seen.add(other.pid);
+      const type = this.typeOf(other);
       const name =
         other === entry
           ? job.name
           : (this.createdDevice(other)?.name ??
-            deviceName({ ...other, ...other.discovered, type }, this.config.language));
-      const value = other.heard ? other.values.get(key)?.value : undefined;
-      if (value === 1) leaking.push(name);
-      else if (value === undefined) unknown.push(name);
+            deviceName(
+              { ...other, ...other.discovered, type: type ?? TYPES.LEAK },
+              this.config.language,
+            ));
+      // A leak or an alert heard from any device of the hub refuses, whatever its type.
+      if (
+        other.heard &&
+        (other.values.get('leak')?.value === 1 || other.values.get('sens')?.value === 1)
+      ) {
+        leaking.push(name);
+        continue;
+      }
+      const key = LEAK_KEY[type];
+      if (key && (!other.heard || other.values.get(key)?.value === undefined)) {
+        unknown.push(name);
+      }
     }
     // Created in Gladys and never heard in this connection: unknown too.
     for (const device of this.gladys.devices ?? []) {
@@ -1179,7 +1212,9 @@ export class DropApp {
     if (job.command === 'open') {
       // A turn-on that left lets go every shutoff of the hub kept before it.
       for (const stop of [...this.stops.values()]) {
-        if (stop.hub === job.hub) this.liftStop(stop, 'let go by a turn-on sent after it');
+        if (stop.hub === job.hub && written === 'ok') {
+          this.liftStop(stop, 'let go by a turn-on sent after it');
+        }
       }
     }
     const sentAt = this.monotonic();

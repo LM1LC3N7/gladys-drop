@@ -57,8 +57,9 @@ leaves at once and cancels those of the same hub still waiting for their turn (n
 clicked before a shutoff leaves after it). It leaves even when the valve seems closed
 already.
 
-It is **kept** (in memory and in `/data`) until a live message of the device shows the
-water off, or a turn-on of this hub leaves after it:
+It is **kept** (in memory and in `/data`) until the device shows the water off after the
+send (a live message, or the retained one received at a reconnection), or a turn-on of
+this hub leaves from Gladys after it (its write taken by the broker):
 
 - clicked without a broker connection: answered "shutoff kept", sent right after the next
   connection, without waiting for a message of the hub;
@@ -66,7 +67,11 @@ water off, or a turn-on of this hub leaves after it:
 - sent again when the device still shows the water on at least 2 s after it left, and
   20 s after each send without a confirmation: 3 times, then every 10 min ("held", said in
   the status), until confirmed;
-- a write of `/data` that fails never delays it.
+- a write of `/data` that fails never delays it;
+- when the valve was known closed as it left, a turn-on seen later (made in the DROP app,
+  say) lets it go: it is never sent again against that turn-on;
+- never confirmed: it is given up 24 h after the click, or as soon as you delete the
+  device in Gladys (the status says so).
 
 It is not sent only when the identity is wrong: a value other than the button press, or a
 device the hub now announces with another type (scan again). Without a possible broker
@@ -91,9 +96,13 @@ connection or disconnection everything is unknown again until the next messages)
 - its leak state is known and without a leak;
 - every device of the same hub able to report a leak (hub, valve, detectors, pump,
   reverse osmosis, alert), announced by the hub or created in Gladys, has a known state,
-  without a leak nor an alert. A detector removed or out of order blocks turning on:
-  delete it in Gladys;
-- no message of the broker was dropped (over 200 a second) in the last 2 seconds;
+  without a leak nor an alert. A leak reported by any device of the hub, even of a type
+  the integration does not know, refuses too. A detector removed or out of order blocks
+  turning on: delete it in Gladys and remove it from the hub (as long as the hub announces
+  it, it counts). After a reconnection, a detector that publishes on change only blocks
+  turning on until its next message (to check on a real hub);
+- no message of the broker was dropped (over 200 a second) in the last 2 seconds; after
+  dropped messages, every value is unknown again until the next message of its device;
 - no shutoff of this hub left less than 20 s ago, and none was clicked since this click.
 
 A turn-on that leaves lets go the shutoffs kept on this hub.

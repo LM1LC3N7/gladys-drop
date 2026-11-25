@@ -293,3 +293,23 @@ test('disconnected: what was heard is unknown again, never published to a device
   assert.equal(t.gladys.fake.lastState(FID(N.leak, FEATURES.BATTERY)), undefined);
   await t.app.shutdown();
 });
+
+test('a value left waiting more than 2 minutes for Gladys is never sent as new', async () => {
+  const t = await setup({ devices: [created('hub')] });
+  await t.open();
+  const publish = t.gladys.publishChangedStates.bind(t.gladys);
+  let failing = true;
+  t.gladys.publishChangedStates = async (...args) => {
+    if (failing) throw new Error('Gladys unavailable');
+    return publish(...args);
+  };
+  await t.announce('hub');
+  await t.clock.advance(TIMINGS.freshFor + 2000);
+  failing = false;
+  await t.clock.advance(TIMINGS.flushInterval * 2);
+  assert.equal(t.gladys.fake.lastState(FID(N.hub, FEATURES.FLOW)), undefined);
+  await t.publish(dataTopic(N.hub), { curFlow: 1 });
+  await t.clock.advance(TIMINGS.flushInterval);
+  assert.equal(t.gladys.fake.lastState(FID(N.hub, FEATURES.FLOW)), 0.227);
+  await t.app.shutdown();
+});

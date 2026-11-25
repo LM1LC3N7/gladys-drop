@@ -124,6 +124,8 @@ export const TIMINGS = {
   stopResends: 3,
   /** then held: sent again this often, forever, until seen applied or a turn-on leaves. */
   stopHeldEvery: 10 * MINUTE,
+  /** A shutoff never seen applied is given up this long after its click (said in the status). */
+  stopExpiry: 24 * HOUR,
   /** A turn-on is refused this long after a shutoff of the same hub left. */
   stopWindow: 20 * SECOND,
   /** A TLS certificate refused: its fingerprint read (nothing written) within this. */

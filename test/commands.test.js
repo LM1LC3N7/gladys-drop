@@ -30,6 +30,15 @@ async function ready(options = {}) {
 }
 
 const sent = (t) => t.client.commands();
+
+/** Moves the clock until every promise is settled (bounded: fails, never hangs). */
+async function settled(t, promises) {
+  let done = 0;
+  for (const p of promises) p.finally(() => (done += 1)).catch(() => {});
+  for (let i = 0; i < 200 && done < promises.length; i += 1) await t.clock.advance(50);
+  assert.equal(done, promises.length, 'not answered within 10 s');
+  return Promise.all(promises);
+}
 const said = (t) => t.status().message.en;
 
 test('by default: the shutoff leaves without any option; the others refused, the reason said', async () => {
@@ -79,8 +88,8 @@ test('shut off without an answer: kept, sent again 3 times every 20 s, then held
   assert.ok(t.clock.elapsed - start <= TIMINGS.commandAnswerBy + 60);
   assert.match(said(t), /shutoff sent, not confirmed yet: sent again/);
   assert.match(said(t), /1 shutoff\(s\) kept/);
-  // The same state as before, too soon after the send, and a retained one: no resend yet.
-  await t.publish(dataTopic(N.hub), { water: 0 }, true);
+  // A retained "water on" (the broker's copy): no resend.
+  await t.publish(dataTopic(N.hub), { water: 1 }, true);
   assert.equal(sent(t).length, 1);
   for (let i = 2; i <= 4; i += 1) {
     await t.clock.advance(TIMINGS.stopCheck);
@@ -238,8 +247,9 @@ test('turn on refused while a shutoff is under way', async () => {
   const t = await ready({ follow: false });
   await t.press(hub(), FEATURES.WATER_CLOSE);
   await t.publish(dataTopic(N.hub), { water: 1 });
-  await t.publish(dataTopic(N.hub), { water: 0, leak: 0 }, true); // retained: not live
-  const ack = await t.press(hub(), FEATURES.WATER_OPEN);
+  // The protection valve of the same hub, closed: its turn-on waits for the hub's shutoff.
+  await t.publish(dataTopic(N.valve), { water: 0, leak: 0 });
+  const ack = await t.press(created('valve'), FEATURES.WATER_OPEN);
   assert.equal(ack.success, false);
   assert.match(said(t), /shutoff of this hub left less than 20 s ago/);
   // The live "water on" after the shutoff contradicted it: sent again, never a turn-on.
@@ -260,8 +270,8 @@ test('the option unchecked while the command waits its turn: never sent', async 
   const second = t.gladys.fake.setValue(device, feature(FEATURES.WATER_OPEN), 1);
   await t.clock.advance(10);
   await t.gladys.fake.configUpdated({ ...ALL, allow_water_open: false });
-  await t.clock.advance(1500);
-  const [a, b] = await Promise.all([first, second]);
+  // Bounded: the clock moves until both are answered, never a wait on a timer that never fires.
+  const [a, b] = await settled(t, [first, second]);
   assert.equal(a.success, true);
   assert.equal(b.success, false);
   assert.deepEqual(
@@ -428,9 +438,8 @@ test('two shutoffs: the end of the first watch does not end the second', async (
   await t.clock.advance(10_000);
   await t.press(hub(), FEATURES.WATER_CLOSE);
   await t.clock.advance(TIMINGS.confirmWatch - 10_000);
-  // Retained: the hub's state, not a confirmation of the second shutoff.
-  await t.publish(dataTopic(N.hub), { water: 0, leak: 0 }, true);
-  const ack = await t.press(hub(), FEATURES.WATER_OPEN);
+  await t.publish(dataTopic(N.valve), { water: 0, leak: 0 });
+  const ack = await t.press(created('valve'), FEATURES.WATER_OPEN);
   assert.equal(ack.success, false);
   assert.match(said(t), /shutoff of this hub left less than 20 s ago/);
   await t.app.shutdown();
@@ -553,7 +562,16 @@ test('turn on refused while messages are being dropped (a leak may be among them
   let ack = await t.press(hub(), FEATURES.WATER_OPEN);
   assert.equal(ack.success, false);
   assert.match(said(t), /state is uncertain/);
-  await t.clock.advance(2000);
+  // 3 s later: still refused, every value unknown until the next message of each device.
+  await t.clock.advance(3000);
+  ack = await t.press(hub(), FEATURES.WATER_OPEN);
+  assert.equal(ack.success, false);
+  await t.publish(dataTopic(N.hub), { water: 0, leak: 0 });
+  await t.publish(dataTopic(N.valve), { water: 1, leak: 0 });
+  await t.publish(dataTopic(N.alert), { sens: 0 });
+  ack = await t.press(hub(), FEATURES.WATER_OPEN);
+  assert.equal(ack.success, false, 'the detector is still unknown');
+  assert.match(said(t), /leak state of Laundry leak is unknown/);
   await t.publish(dataTopic(N.leak), { leak: 0 });
   ack = await t.press(hub(), FEATURES.WATER_OPEN);
   assert.equal(ack.success, true);
@@ -591,5 +609,102 @@ test('a command is confirmed only by a live message with the value asked', async
   assert.match(said(t), /sent, without confirmation/);
   await t.publish(dataTopic(N.hub), { bypass: 1 });
   assert.match(said(t), /done, confirmed by the device/);
+  await t.app.shutdown();
+});
+
+test('a shutoff of a valve known closed: a turn-on made elsewhere later is never fought', async () => {
+  const t = await ready({ follow: false });
+  await t.publish(dataTopic(N.hub), { water: 0 });
+  await t.press(hub(), FEATURES.WATER_CLOSE);
+  assert.equal(t.app.stops.size, 1);
+  await t.clock.advance(1000);
+  // The DROP app opens the water: a live "water on".
+  await t.publish(dataTopic(N.hub), { water: 1 });
+  assert.equal(t.app.stops.size, 0);
+  await t.clock.advance(TIMINGS.stopHeldEvery * 2);
+  assert.equal(sent(t).length, 1, 'never sent again against it');
+  await t.app.shutdown();
+});
+
+test('a retained "water off" received after the send at a reconnection lets the shutoff go', async () => {
+  const t = await ready({ follow: false });
+  await t.press(hub(), FEATURES.WATER_CLOSE);
+  t.client.close();
+  await t.clock.advance(0);
+  t.client.open();
+  await t.clock.advance(0);
+  assert.equal(sent(t).length, 2, 'sent again at the connection');
+  await t.publish(dataTopic(N.hub), { water: 0 }, true);
+  assert.equal(t.app.stops.size, 0);
+  await t.clock.advance(TIMINGS.stopHeldEvery);
+  assert.equal(sent(t).length, 2);
+  await t.app.shutdown();
+});
+
+test('a shutoff never seen applied: given up when the device is deleted, or after 24 h', async () => {
+  const t = await ready({ follow: false });
+  const device = hub();
+  await t.press(device, FEATURES.WATER_CLOSE);
+  await t.gladys.fake.deviceDeleted(device);
+  await t.clock.advance(0);
+  assert.equal(t.app.stops.size, 0);
+  const u = await ready({ follow: false });
+  await u.press(hub(), FEATURES.WATER_CLOSE);
+  await u.clock.advance(TIMINGS.stopExpiry + TIMINGS.stopHeldEvery);
+  assert.equal(u.app.stops.size, 0);
+  const count = sent(u).length;
+  await u.clock.advance(TIMINGS.stopHeldEvery * 2);
+  assert.equal(sent(u).length, count);
+  assert.ok(u.logger.lines.some((l) => /given up: not seen applied in 24 h/.test(l)));
+  await t.app.shutdown();
+  await u.app.shutdown();
+});
+
+test('a leak heard from any device of the hub refuses, even of an unknown type', async () => {
+  const t = await ready();
+  await t.publish(dataTopic(N.hub), { water: 0 });
+  // Device 22: heard by its data only, neither announced nor created.
+  await t.publish(dataTopic('22'), { leak: 1 });
+  const ack = await t.press(hub(), FEATURES.WATER_OPEN);
+  assert.equal(ack.success, false);
+  assert.match(said(t), /a leak is reported/);
+  assert.deepEqual(sent(t), []);
+  await t.app.shutdown();
+});
+
+test('a turn-on whose write was left hanging never lets a shutoff go', async () => {
+  const t = await ready({ follow: false });
+  await t.press(hub(), FEATURES.WATER_CLOSE);
+  for (let i = 0; i < 4; i += 1) await t.clock.advance(TIMINGS.stopCheck);
+  await t.publish(dataTopic(N.hub), { water: 1, leak: 0 }, true);
+  t.client.publishMode = 'hang';
+  await t.publish(dataTopic(N.hub), { water: 0, leak: 0 });
+  // A live "water off" lets it go: start again with a stop kept and the valve still on.
+  assert.equal(t.app.stops.size, 0);
+  t.client.publishMode = undefined;
+  await t.publish(dataTopic(N.hub), { water: 1 });
+  await t.press(hub(), FEATURES.WATER_CLOSE);
+  for (let i = 0; i < 4; i += 1) await t.clock.advance(TIMINGS.stopCheck);
+  t.client.publishMode = 'hang';
+  t.app.registry.get(`${HUB}_${N.hub}`).values.set('water', { value: 0, at: 0, live: true });
+  const ack = await t.press(hub(), FEATURES.WATER_OPEN);
+  assert.equal(ack.success, true, 'answered "sent"');
+  assert.equal(t.app.stops.size, 1, 'in doubt, the shutoff stays');
+  await t.app.shutdown();
+});
+
+test('a command is never confirmed by a message of another device', async () => {
+  const t = await ready({
+    follow: false,
+    devices: [hub(), created('softener'), created('valve'), created('leak'), created('alert')],
+  });
+  const device = hub();
+  const bypass = device.features.find((f) => f.external_id.endsWith(`:${FEATURES.BYPASS}`));
+  const ack = t.gladys.fake.setValue(device, bypass, 'on');
+  await t.clock.advance(100);
+  await t.publish(dataTopic(N.softener), { bypass: 1 });
+  const [result] = await settled(t, [ack]);
+  assert.equal(result.success, true);
+  assert.match(said(t), /sent, without confirmation/);
   await t.app.shutdown();
 });

@@ -30,18 +30,6 @@
     "to": "    if (false) {"
   },
   {
-    "name": "open: a leak elsewhere on the hub ignored",
-    "file": "src/app.js",
-    "from": "      if (value === 1) leaking.push(name);",
-    "to": "      if (value === 2) leaking.push(name);"
-  },
-  {
-    "name": "open: a sensor alert ignored",
-    "file": "src/app.js",
-    "from": "  [TYPES.ALERT]: 'sens',",
-    "to": "  [TYPES.ALERT]: 'nope',"
-  },
-  {
     "name": "open: other hubs checked instead of this one",
     "file": "src/app.js",
     "from": "      if (other.hub !== job.hub) continue;",
@@ -270,18 +258,6 @@
     "to": "      if (!this.config.allowWaterOpen) return { ok: false, text: C.notAllowed(name, command) };\n      return this.clickClose(job);"
   },
   {
-    "name": "stop: lifted by any live water value",
-    "file": "src/app.js",
-    "from": "      if (values.get('water') === 0) {\n        this.liftStop(stop, 'confirmed');",
-    "to": "      if (values.get('water') !== undefined) {\n        this.liftStop(stop, 'confirmed');"
-  },
-  {
-    "name": "stop: lifted by a retained message",
-    "file": "src/app.js",
-    "from": "    if (stop && !retained && values.has('water')) {",
-    "to": "    if (stop && values.has('water')) {"
-  },
-  {
     "name": "stop: contradiction ignored",
     "file": "src/app.js",
     "from": "        // Contradicted: the water is still on after the shutoff left.\n        this.retryStop(stop);",
@@ -336,22 +312,10 @@
     "to": "    if (false) {\n      // Never written over a file that could not be read.\n      return false;"
   },
   {
-    "name": "open: a turn-on that left does not let the shutoff go",
-    "file": "src/app.js",
-    "from": "        if (stop.hub === job.hub) this.liftStop(stop, 'let go by a turn-on sent after it');",
-    "to": "        void stop;"
-  },
-  {
     "name": "open: created devices never heard ignored",
     "file": "src/app.js",
     "from": "      unknown.push(typeof device.name === 'string' ? device.name.slice(0, 60) : pid);",
     "to": "      void pid;"
-  },
-  {
-    "name": "open: announced devices never heard ignored",
-    "file": "src/app.js",
-    "from": "      else if (value === undefined) unknown.push(name);",
-    "to": "      else if (value === undefined) void name;"
   },
   {
     "name": "open: dropped messages ignored",
@@ -370,5 +334,83 @@
     "file": "src/store.js",
     "from": "Math.min(s.at, now)",
     "to": "s.at"
+  },
+  {
+    "name": "stop: a turn-on made elsewhere fought",
+    "file": "src/app.js",
+    "from": "      } else if (water === 1 && !retained && stop.closedSeen) {",
+    "to": "      } else if (false) {"
+  },
+  {
+    "name": "stop: never known closed at the send",
+    "file": "src/app.js",
+    "from": "    if (entry?.heard && entry.values.get('water')?.value === 0) stop.closedSeen = true;",
+    "to": "    void entry;"
+  },
+  {
+    "name": "stop: deleting the device keeps it",
+    "file": "src/app.js",
+    "from": "    if (stop) this.liftStop(stop, 'given up: the device was deleted in Gladys');",
+    "to": "    void stop;"
+  },
+  {
+    "name": "stop: never expires",
+    "file": "src/app.js",
+    "from": "    if (this.now() - stop.at > TIMINGS.stopExpiry) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "open: a turn-on left hanging lets the shutoff go",
+    "file": "src/app.js",
+    "from": "        if (stop.hub === job.hub && written === 'ok') {",
+    "to": "        if (stop.hub === job.hub) {"
+  },
+  {
+    "name": "open: a leak of a device of unknown type ignored",
+    "file": "src/app.js",
+    "from": "        (other.values.get('leak')?.value === 1 || other.values.get('sens')?.value === 1)",
+    "to": "        LEAK_KEY[type] &&\n        (other.values.get('leak')?.value === 1 || other.values.get('sens')?.value === 1)"
+  },
+  {
+    "name": "open: a leak elsewhere on the hub ignored",
+    "file": "src/app.js",
+    "from": "        (other.values.get('leak')?.value === 1 || other.values.get('sens')?.value === 1)",
+    "to": "        (other.values.get('leak')?.value === 2 || other.values.get('sens')?.value === 1)"
+  },
+  {
+    "name": "open: a sensor alert ignored",
+    "file": "src/app.js",
+    "from": "        (other.values.get('leak')?.value === 1 || other.values.get('sens')?.value === 1)",
+    "to": "        (other.values.get('leak')?.value === 1 || other.values.get('sens')?.value === 2)"
+  },
+  {
+    "name": "open: announced devices never heard ignored",
+    "file": "src/app.js",
+    "from": "      if (key && (!other.heard || other.values.get(key)?.value === undefined)) {",
+    "to": "      if (false) {"
+  },
+  {
+    "name": "flood: values kept after dropped messages",
+    "file": "src/app.js",
+    "from": "        for (const entry of this.registry.values()) entry.values.clear();",
+    "to": "        void 0;"
+  },
+  {
+    "name": "confirmation: a message of another device confirms",
+    "file": "src/app.js",
+    "from": "          waiter.pid === entry.pid &&",
+    "to": "          true &&"
+  },
+  {
+    "name": "publisher: a value older than 2 min sent",
+    "file": "src/publisher.js",
+    "from": "      if (now - at <= TIMINGS.freshFor) {",
+    "to": "      if (true) {"
+  },
+  {
+    "name": "stop: lifted by any water value",
+    "file": "src/app.js",
+    "from": "      if (water === 0) {\n        // Seen closed",
+    "to": "      if (water !== undefined) {\n        // Seen closed"
   }
 ]
