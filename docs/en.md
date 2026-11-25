@@ -57,10 +57,11 @@ leaves at once and cancels those of the same hub still waiting for their turn (n
 clicked before a shutoff leaves after it). It leaves even when the valve seems closed
 already.
 
-It is **kept** (in memory and in `/data`) until the device shows the water off after it
-left (a live message, or the retained one received at a later reconnection; before it
-leaves, nothing lets it go), or a turn-on of
-this hub leaves from Gladys after it (its write taken by the broker):
+It is **kept** (in memory and in `/data`) until the device shows the water off in a live
+message received after it left, or a turn-on of this hub leaves from Gladys after it (its
+write taken by the broker). Before it leaves, nothing lets it go. The retained message the
+broker replays at a reconnection never lets it go: it may be older than your click (the
+valve opened since).
 
 - clicked without a broker connection: answered "shutoff kept", sent right after the next
   connection, without waiting for a message of the hub;
@@ -69,12 +70,17 @@ this hub leaves from Gladys after it (its write taken by the broker):
   20 s after each send without a confirmation: 3 times, then every 10 min ("held", said in
   the status), until confirmed;
 - a write of `/data` that fails never delays it;
-- when the valve was known closed as it left, a turn-on seen later (made in the DROP app,
-  say) lets it go: it is never sent again against that turn-on;
+- when the valve was known closed (by a live message) as it left, a turn-on seen later
+  (made in the DROP app, say) lets it go: it is never sent again against that turn-on;
+- the price of the doubt: when the live confirmation was missed (Gladys or the broker down
+  at that moment), the shutoff stays kept, and a turn-on made in the DROP app right after
+  can be cut **once** (at once, or within 10 min when it is "held"); the live "water off"
+  the hub then publishes lets it go. The status lists the shutoffs kept: turning the water
+  on from Gladys (its option) lets them go;
 - never confirmed: it is given up 24 h after it first left in this run of the
-  integration (it always leaves at least once; the status names it), or as soon as you
-  delete the
-  device in Gladys (the status says so).
+  integration (it always leaves at least once; the status names it; the 24 h start again
+  at each restart of the integration), or as soon as you delete the device in Gladys (the
+  status says so).
 
 It is not sent only when the identity is wrong: a value other than the button press, or a
 device the hub now announces with another type (scan again). Without a possible broker

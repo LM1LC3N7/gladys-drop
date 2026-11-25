@@ -501,6 +501,13 @@ export class DropApp {
     if (!current()) {
       return;
     }
+    if (!client.connected) {
+      // The connection dropped before the SUBACK (mqtt.js fails a pending
+      // SUBSCRIBE with "Connection closed") or right after it, before this
+      // resumed: never a refusal, never "connected". mqtt.js reconnects and
+      // the next connection subscribes again (and sends the kept shutoffs).
+      return;
+    }
     if (!granted || granted.some((g) => !(g?.qos >= 0 && g.qos <= 2))) {
       // Not tried again by itself (an ACL does not change alone): the button or a new configuration.
       this.logger.warn('The broker refused the subscription to drop_connect/#');
@@ -704,9 +711,11 @@ export class DropApp {
     const stop = this.stops.get(entry.pid);
     if (stop && values.has('water')) {
       const water = values.get('water');
-      if (water === 0 && stop.sends > 0) {
-        // Seen closed after the shutoff left (a retained message too: the hub's
-        // last word). Before it left, nothing lets it go: it leaves first.
+      if (water === 0 && !retained && stop.sends > 0) {
+        // Seen closed by a live message received after the shutoff left. Never
+        // by a retained one: the broker replays it at the subscription, it may
+        // predate the click (the valve opened since, published unretained).
+        // Before it left, nothing lets it go: it leaves first.
         this.liftStop(stop, 'confirmed');
       } else if (water === 1 && !retained && stop.closedSeen) {
         // Known closed when it left: this is a turn-on made elsewhere (the DROP app), never fought.

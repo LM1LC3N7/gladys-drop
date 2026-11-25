@@ -57,9 +57,10 @@ elle part tout de suite et annule celles du même hub qui attendent encore leur 
 cliqué avant une coupure ne part après elle). Elle part même si la vanne semble déjà fermée.
 
 Elle est **gardée** (en mémoire et dans `/data`) jusqu'à ce que l'appareil montre l'eau
-coupée après son départ (message en direct, ou message retenu reçu à une reconnexion
-suivante ; avant son départ, rien ne la lève), ou
-qu'une ouverture de ce hub parte de Gladys après elle (écriture acceptée par le broker) :
+coupée dans un message en direct reçu après son départ, ou qu'une ouverture de ce hub parte
+de Gladys après elle (écriture acceptée par le broker). Avant son départ, rien ne la lève.
+Le message conservé (« retained ») que le broker rejoue à une reconnexion ne la lève
+jamais : il peut dater d'avant votre clic (vanne rouverte depuis).
 
 - cliquée sans connexion au broker : réponse « coupure gardée », envoi juste après la
   connexion suivante, sans attendre de message du hub ;
@@ -68,13 +69,18 @@ qu'une ouverture de ce hub parte de Gladys après elle (écriture acceptée par 
   après chaque envoi sans confirmation : 3 fois, puis toutes les 10 min (« retenue »,
   dit dans le statut), jusqu'à confirmation ;
 - une écriture de `/data` qui échoue ne la retarde jamais ;
-- si la vanne était connue fermée quand la coupure est partie, une ouverture vue ensuite
-  (faite dans l'application DROP, par exemple) la lève : elle n'est jamais renvoyée contre
-  cette ouverture ;
+- si la vanne était connue fermée (par un message en direct) quand la coupure est partie,
+  une ouverture vue ensuite (faite dans l'application DROP, par exemple) la lève : elle
+  n'est jamais renvoyée contre cette ouverture ;
+- le prix du doute : si la confirmation en direct a été manquée (Gladys ou le broker coupé
+  à ce moment-là), la coupure reste gardée, et une ouverture faite dans l'application DROP
+  juste après peut être recoupée **une fois** (tout de suite, ou dans les 10 min si elle est
+  « retenue ») ; le message « eau coupée » que le hub publie alors en direct la lève. Le
+  statut liste les coupures gardées : ouvrir l'eau depuis Gladys (son option) les lève ;
 - jamais confirmée : elle est abandonnée 24 h après son premier envoi depuis le démarrage
-  de l'intégration (elle part toujours au moins une fois ; le statut la nomme), ou dès que
-  vous supprimez
-  l'appareil dans Gladys (le statut le dit).
+  de l'intégration (elle part toujours au moins une fois ; le statut la nomme ; les 24 h
+  repartent à chaque redémarrage de l'intégration), ou dès que vous supprimez l'appareil
+  dans Gladys (le statut le dit).
 
 Elle n'est pas envoyée seulement si l'identité ne va pas : une valeur autre que l'appui du
 bouton, ou un appareil dont le hub annonce maintenant un autre type (relancez une

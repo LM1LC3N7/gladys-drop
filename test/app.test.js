@@ -163,6 +163,28 @@ test('a subscription refused (ACL): stopped, said', async () => {
   await t.app.shutdown();
 });
 
+test('the connection lost before or right after the SUBACK: never a refusal; at the next connection a kept shutoff leaves', async () => {
+  for (const mode of ['before-suback', 'after-suback']) {
+    const t = await setup({ devices: [created('hub')], follow: false });
+    t.client.dropOnSubscribe = mode;
+    await t.open();
+    assert.equal(t.client.ended, false, `${mode}: not stopped`);
+    assert.equal(t.app.mqttConnected, false, `${mode}: not taken as connected`);
+    assert.doesNotMatch(t.status().message.en, /refused/, mode);
+    const ack = await t.press(created('hub'), FEATURES.WATER_CLOSE);
+    assert.equal(ack.success, true, mode);
+    // mqtt.js reconnects the same client.
+    await t.open();
+    assert.equal(t.app.mqttConnected, true, mode);
+    assert.deepEqual(
+      t.client.commands().map((c) => c.body),
+      [{ water: 0 }],
+      `${mode}: the shutoff left`,
+    );
+    await t.app.shutdown();
+  }
+});
+
 test('too many messages: dropped beyond 200 a second, said; at most 64 devices followed', async () => {
   const t = await setup({ devices: [created('hub')] });
   await t.open();

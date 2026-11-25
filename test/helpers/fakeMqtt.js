@@ -23,12 +23,27 @@ export class FakeMqttClient extends EventEmitter {
 
   subscribe(topics, options, callback) {
     this.subscriptions.push(...[].concat(topics));
-    // Retained messages arriving in the same block as the SUBACK: handled before its callback.
-    for (const [topic, payload] of this.retainedOnSubscribe ?? []) {
-      this.deliver(topic, payload, { retain: true });
+    // Messages arriving in the same block as the SUBACK (retained unless said
+    // otherwise): handled before its callback.
+    for (const [topic, payload, retain = true] of this.withSuback ?? []) {
+      this.deliver(topic, payload, { retain });
     }
     const granted = this.granted ?? [].concat(topics).map((topic) => ({ topic, qos: 0 }));
+    if (this.dropOnSubscribe === 'before-suback') {
+      // The connection drops before the SUBACK: mqtt.js fails the pending
+      // SUBSCRIBE ("Connection closed"), then emits close.
+      this.dropOnSubscribe = undefined;
+      this.connected = false;
+      callback?.(new Error('Connection closed'));
+      this.emit('close');
+      return;
+    }
     callback?.(null, granted);
+    if (this.dropOnSubscribe === 'after-suback') {
+      // The SUBACK, then the connection cut in the same tick (before the app resumes).
+      this.dropOnSubscribe = undefined;
+      this.close();
+    }
   }
 
   publish(topic, payload, options, callback) {

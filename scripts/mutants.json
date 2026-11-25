@@ -410,14 +410,14 @@
   {
     "name": "stop: lifted by any water value",
     "file": "src/app.js",
-    "from": "      if (water === 0 && stop.sends > 0) {",
-    "to": "      if (water !== undefined && stop.sends > 0) {"
+    "from": "      if (water === 0 && !retained && stop.sends > 0) {",
+    "to": "      if (water !== undefined && !retained && stop.sends > 0) {"
   },
   {
     "name": "stop: lifted before it left",
     "file": "src/app.js",
-    "from": "      if (water === 0 && stop.sends > 0) {",
-    "to": "      if (water === 0) {"
+    "from": "      if (water === 0 && !retained && stop.sends > 0) {",
+    "to": "      if (water === 0 && !retained) {"
   },
   {
     "name": "stop: never known closed at the send",
@@ -436,5 +436,17 @@
     "file": "src/app.js",
     "from": "      message = join(message, T.stopsGivenUp(this.givenUp.join(', ')));",
     "to": "      void 0;"
+  },
+  {
+    "name": "stop: lifted by a retained water off (I5)",
+    "file": "src/app.js",
+    "from": "      if (water === 0 && !retained && stop.sends > 0) {",
+    "to": "      if (water === 0 && stop.sends > 0) {"
+  },
+  {
+    "name": "onConnect: a connection lost around the SUBACK taken as a refusal or as connected",
+    "file": "src/app.js",
+    "from": "    if (!client.connected) {\n      // The connection dropped before the SUBACK",
+    "to": "    if (false) {\n      // The connection dropped before the SUBACK"
   }
 ]

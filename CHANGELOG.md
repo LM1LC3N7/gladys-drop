@@ -20,7 +20,8 @@ the notes of the version's GitHub Release.
   pressure (PSI), temperature (°F), leaks, batteries, softener capacity and
   reserve, salt, pump, TDS, cartridge life, bypass and protect mode.
 - Shutting the water off, always allowed (no option, never a switch), kept
-  until the device shows the water off: sent at the next connection when
+  until a live message of the device shows the water off (never a retained
+  one, it may predate the click): sent at the next connection when
   clicked offline, again after a restart, when contradicted and without a
   confirmation; never against a turn-on made elsewhere once seen closed;
   given up when the device is deleted or 24 h after it first left.

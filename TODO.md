@@ -65,7 +65,8 @@ up to date at the end of every milestone.
   comes from the hub's last announcement, kept across reconnections (m5).
 - **No read request in DROP**: decisions rest on what the hub published in
   the current broker connection (values reset at each connection and
-  disconnection; retained messages count, they are the hub's last word).
+  disconnection; retained messages count for a turn-on, they are the hub's
+  last word; a shutoff is let go by a live message only, see Review r4).
   No age bound on them: the hub publishes on change, and a closed valve
   without flow may stay silent for hours (an age bound would refuse every
   turn-on of a closed valve). Asked in "To check".
@@ -111,7 +112,7 @@ life-remaining` (core 4.86+).
   connection or the handshake, and the pinned check runs first in
   `secureConnect`. Kept as defence in depth (a CONNECT carries the password).
 - **Review r2 (2026-11-25)**: I2: a shutoff is let go by a `water:0` seen
-  after its send, retained included (the hub's last word at a reconnection);
+  after its send (retained included at r2; reversed at r4: live only);
   when the valve was known closed as it left, a later live `water:1` is a
   turn-on made elsewhere (DROP app): let go, never fought; a shutoff never
   seen applied is given up when its device is deleted in Gladys, or 24 h
@@ -130,7 +131,7 @@ life-remaining` (core 4.86+).
   24 h give-up counts on the monotonic clock from its first send in this
   process (never the wall clock, never from /data); a give-up is named in the
   status. I4: a shutoff not yet sent is let go by nothing: it leaves first;
-  only a `water:0` received after its send (retained included) lets it go;
+  only a `water:0` received after its send lets it go (live only since r4);
   "known closed" (a later live turn-on made elsewhere) rests on a live
   message only, never a retained one. Checks: 73 mutants, all killed but
   #33 (equivalent, as before) and #67 (expiry without a send: equivalent, the
@@ -141,6 +142,36 @@ life-remaining` (core 4.86+).
   with the broker down then sent at its return, a stale retained "off" only
   after the send, the retained "off" at a reconnection, a leak of an
   unknown-type device, the shutoff resent from /data after a restart.
+- **Review r4 (2026-11-25)**: I5 (decided): a shutoff that left is let go
+  only by a live `water:0` received after its send, never by a retained one
+  (the broker replays it at the subscription; it may predate the click, the
+  valve reopened since with an unretained message). In doubt the shutoff
+  stays: shutting a closed valve does nothing. The price, said in the docs:
+  when the live confirmation was missed (Gladys or the broker down), a
+  turn-on made in the DROP app right after can be cut once (at once, or
+  within 10 min when held), then the hub's live "off" lets it go; the 24 h
+  give-up counts in memory and starts again at each restart (harmless, it
+  protects). Tests: a retained "off" with the SUBACK and after the resend
+  at a reconnection keeps it, sent again 20 s later, a live "off" lets it
+  go; the missed confirmation then a turn-on in the app cut once; a shutoff
+  from /data with a live "off" in the SUBACK block still leaves. Found by
+  the x20 run (one flaky pass of the 16 KB test): a connection lost before
+  the SUBACK (mqtt.js fails the pending SUBSCRIBE, "Connection closed") was
+  taken as an ACL refusal, never tried again by itself, so a kept shutoff
+  never left; lost right after it, the app said "connected" after the close.
+  Now `onConnect` stops when the client is no longer connected (the next
+  connection subscribes again); a test for both orders, mutant #74.
+  Mutants: 75 (new #73: lifted by a retained "off"; #74), all killed but #33
+  and #67 (equivalent, see r3): 74 in a full run before the SUBACK fix, then
+  the 27 of the connection and the shutoffs again after it. Suite 20/20 in
+  `node:22-alpine` (1 GB). Real
+  Mosquitto 2.1.4 in Docker, 52 checks green over 12 scenarios: s1 (no
+  option), s2 A (broker down at the click), B (hub absent, then a live "on"),
+  C (turn-on in the app never fought), D (/data after a restart), F (stale
+  retained "off", clicked offline), F2 (stale retained "off" after the send:
+  kept, sent again), s6 (wall clock +25 h, /data 2 days old), s3 (I1, I3,
+  m1'), s4 (refused credentials, one CONNECT), s5 (TLS pin). F2 replayed on
+  the r4 code fails (let go, never sent again).
 - **Real broker**: a scenario against Mosquitto 2 in Docker (password file, a
   simulated hub publishing retained discovery and data, following the
   commands): connected, states, Discovery, shutoff and turn-on confirmed in
